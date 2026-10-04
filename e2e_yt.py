@@ -34,11 +34,11 @@ with sync_playwright() as pw:
         pg.goto(HTML); pg.wait_for_timeout(1200)
         P = f'[{tag}]'
         check(pg.is_visible('#ytFab') and not pg.is_visible('#yt'), P + ' 預設：YouTube 按鈕，還沒佔畫面')
-        pg.click('#ytFab'); pg.wait_for_timeout(400)
+        pg.click('#ytFab'); pg.wait_for_timeout(900)
         check(pg.evaluate("document.body.classList.contains('ytsplit')"), '按 YouTube → 分割畫面')
         r = pg.evaluate("(()=>{const y=document.querySelector('#yt').getBoundingClientRect(), m=document.querySelector('#map').getBoundingClientRect(), s=document.querySelector('#sheet').getBoundingClientRect(); return {y:[y.left,y.top,y.right,y.bottom,y.width], m:[m.right,m.bottom], s:s.bottom, vw:innerWidth, vh:innerHeight}})()")
         if tag == 'phone':
-            check(abs(r['y'][3] - r['vh']) < 2 and r['y'][0] == 0 and abs(r['y'][4] - r['vw']) < 2, f"手機：YouTube 在下面整條（{r['y']}）")
+            check(abs(r['y'][3] - r['vh']) < 3 and r['y'][0] == 0 and abs(r['y'][4] - r['vw']) < 2, f"手機：YouTube 在下面整條（{r['y']}）")
             check(abs(r['m'][1] - r['y'][1]) < 3, f"地圖只到 YouTube 上緣（{r['m'][1]} vs {r['y'][1]}）")
             check(r['s'] <= r['y'][1] + 1, '搜尋抽屜在 YouTube 上面，不重疊')
         else:
@@ -68,7 +68,7 @@ with sync_playwright() as pw:
         pg.click('#ytSwap'); pg.wait_for_timeout(200)
         pg.click('#ytPaste'); pg.wait_for_timeout(400)
         check(pg.evaluate("window.__yt.vid") == 'bbbbbbbbbb1', '播放剛複製的連結')
-        pg.click('#ytClose'); pg.wait_for_timeout(400)
+        pg.click('#ytClose'); pg.wait_for_timeout(900)
         check(not pg.evaluate("document.body.classList.contains('ytsplit')") and pg.is_visible('#ytFab'), '關掉 → 地圖回到全螢幕')
         mb = pg.evaluate("document.querySelector('#map').getBoundingClientRect().bottom")
         check(abs(mb - vp['height']) < 2, '地圖高度恢復')

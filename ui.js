@@ -256,7 +256,7 @@
       if (map) map._g.setMapTypeId(gBase);
       S.effBase = gBase;
       applyTraffic(); updAttr();
-      if (!$('#layerPop').hidden) renderLayerPop();
+      if (popOpen()) renderLayerPop();
       return;
     }
     if (!map || !map.getLayer('bm-emap')) return;
@@ -270,7 +270,7 @@
     updAttr();
     applyPalette();
     applyTraffic();
-    if (!$('#layerPop').hidden) renderLayerPop();
+    if (popOpen()) renderLayerPop();
   }
   // 地圖轉超過 3° 就換向量圖，轉回 0.5° 以內才換回（避免在邊界來回閃）
   function onRotateBase() {
@@ -408,11 +408,37 @@
       };
     });
   }
+  S.touches = 0; S.ptr = false; S.lastGesture = 0;
+  const userBusy = () => S.touches > 0 || S.ptr || performance.now() - S.lastGesture < 450;
+  function watchGestures() {
+    const el = $('#map');
+    const t = (e) => { S.touches = e.touches.length; S.lastGesture = performance.now(); if (!S.touches) gestureEnd(); };
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((k) => el.addEventListener(k, t, { passive: true, capture: true }));
+    el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') { S.ptr = true; S.lastGesture = performance.now(); } }, { capture: true });
+    window.addEventListener('pointerup', () => { if (S.ptr) { S.ptr = false; S.lastGesture = performance.now(); gestureEnd(); } });
+    el.addEventListener('wheel', () => { S.lastGesture = performance.now(); clearTimeout(S.wheelT); S.wheelT = setTimeout(gestureEnd, 300); }, { passive: true, capture: true });
+  }
+  // 放開手：跟隨中就平順地回到你身上（不是瞬間跳回去）
+  function gestureEnd() {
+    if (S.track !== 'off' || (S.nav?.active && S.nav.follow)) S.recenter = true;
+    kickMe();
+  }
+  // 跟隨中：兩指縮放以畫面中心（＝你）為準、方向跟隨時不讓手指轉地圖
+  function applyGestureMode() {
+    if (!map || G || !map.touchZoomRotate) return;
+    const follow = S.track !== 'off' || !!(S.nav?.active && S.nav.follow);
+    const opt = follow ? { around: 'center' } : undefined;
+    map.touchZoomRotate.enable(opt);
+    map.scrollZoom.disable(); map.scrollZoom.enable(opt);
+    if (S.track === 'heading' || (S.nav?.active && S.nav.follow)) map.touchZoomRotate.disableRotation(); else map.touchZoomRotate.enableRotation();
+  }
   function bindMapCommon() {
     guardCamera();
+    watchGestures();
     map.on('load', onMapLoad);
     map.on('dragstart', () => {
-      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; }
+      if (S.touches >= 2) return;   // 兩指縮放：繼續跟著你（像 Apple 地圖）
+      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; applyGestureMode(); }
       else if (S.track !== 'off') setTrack('off');
     });
     map.on('rotate', () => { updCompass(); onRotateBase(); });
@@ -596,7 +622,7 @@
     // 地圖拖到別的縣市（拉近到市區程度時）自動換縣市資料
     map.on('moveend', () => { if (!S.nav?.active && map.getZoom() >= 10.5 && S.track === 'off') autoCounty(map.getCenter().toArray()); });
     map.on('click', (e) => {
-      $('#layerPop').hidden = true;
+      showPop(false);
       const order = ['search-pt', 'bus-st', 'bike-pt', 'bike-cluster', 'speedcam', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines'];
       const hits = map.queryRenderedFeatures(e.point, { layers: order.filter((l) => map.getLayer(l)) });
       if (hits.length) {
@@ -904,10 +930,20 @@
 
   function setBody(html, view) {
     stopTimers();
+    const changed = view !== S.view || S.navDir;
     S.view = view;
     S.backFn = null;   // 「返回」預設回首頁；要回上一頁的畫面自己再設
-    $('#sheetBody').innerHTML = html;
-    $('#sheetBody').scrollTop = 0;
+    const body = $('#sheetBody');
+    body.innerHTML = html;
+    body.scrollTop = 0;
+    if (changed && view !== 'nav') {
+      // 往前：從右邊滑進來；返回：從左邊；回首頁：往上浮
+      const dir = S.navDir || (view === 'home' ? 'up' : 'fwd');
+      body.classList.remove('in-fwd', 'in-back', 'in-up'); void body.offsetWidth;
+      body.classList.add('in-' + dir);
+      clearTimeout(body._t); body._t = setTimeout(() => body.classList.remove('in-' + dir), 600);
+    }
+    S.navDir = null;
     if (sheet().dataset.d === 'peek' && view !== 'nav' && view !== 'home') setDetent('half');
   }
   function stopTimers() { S.timers.forEach(clearInterval); S.timers = []; }
@@ -1499,7 +1535,7 @@
       const pts = rows.map((r) => r.p);
       const bb = bboxOf({ coordinates: pts });
       if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 700, maxZoom: 16 });
-      $('#rBody').innerHTML = `<div class="list">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
+      $('#rBody').innerHTML = `<div class="list stagger">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
       $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(rows[+b.dataset.i])));
     } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗：' + gHint(e, 'Places API (New)'))); }
   }
@@ -1796,7 +1832,7 @@
           if (c.deg != null) props.dir = c.deg;
           return { type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: props };
         }) });
-        if (!$('#layerPop').hidden) renderLayerPop();
+        if (popOpen()) renderLayerPop();
         return SC.list;
       }).catch((e) => { SC.loading = null; SC.err = true; throw e; });
     }
@@ -1911,7 +1947,7 @@
     const box = $('#rtBody'); if (!box) return;
     drawTransitOnMap(T.routes[0]);
     $('#rt-transit') && ($('#rt-transit').textContent = C.fmtDur(T.routes[0].duration));
-    box.innerHTML = `<div class="list">${T.routes.map((r, i) => {
+    box.innerHTML = `<div class="list stagger">${T.routes.map((r, i) => {
       const t = transitTimes(r);
       const walkMin = Math.round(r.segs.filter((s) => s.kind === 'walk').reduce((a, s) => a + s.duration, 0) / 60);
       const first = r.segs.find((s) => s.kind === 'transit');
@@ -1930,7 +1966,7 @@
     S.backFn = () => { previewRoute(T.dest, 'transit', T); };
     const t = transitTimes(r);
     box.innerHTML = `<div class="sec route-sum"><b>${C.fmtDur(r.duration)}</b><div>${hhmm(t.start)} 出發・${hhmm(t.end)} 抵達${r.fare ? '・' + esc(r.fare) : ''}</div></div>
-      <ol class="tl">${r.segs.map((s, k) => (s.kind === 'walk'
+      <ol class="tl stagger">${r.segs.map((s, k) => (s.kind === 'walk'
         ? `<li class="walk"><div class="t1">步行 ${Math.max(1, Math.round(s.duration / 60))} 分鐘</div><div class="t2">${C.fmtDist(s.distance)}</div></li>`
         : `<li style="--c:${esc(s.color)}"><div class="t1"><span class="lchip" style="background:${esc(s.color)};color:${esc(s.textColor)}">${esc(s.vehicle)} ${esc(s.line)}</span> ${s.headsign ? '往 ' + esc(s.headsign) : ''}</div>
             <div class="t2">${hhmm(s.dep)} ${esc(s.from)} 上車</div>
@@ -2050,7 +2086,7 @@
     const N = S.nav; if (!N) return;
     if (!sim) startCompass();   // 按「出發」當下要指南針權限（iPhone 規定要在點按時要）
     if (SC.on && ['car', 'scooter'].includes(N.mode)) loadSpeedcam().catch(() => {});
-    N.active = true; N.sim = sim; N.cur = 0; N.follow = true; N.off = 0; N.lastReroute = 0; N.said = {}; N.simM = 0;
+    N.active = true; N.sim = sim; N.cur = 0; N.follow = true; setTimeout(applyGestureMode, 0); N.off = 0; N.lastReroute = 0; N.said = {}; N.simM = 0;
     $('#turn').hidden = false;
     $('#hudSpeed').hidden = false;
     document.body.classList.add('navigating');
@@ -2163,6 +2199,7 @@
     $('#sheetBody').style.paddingTop = '';
     $('#sheetBody').style.visibility = '';
     S.nav = null;
+    applyGestureMode();
     layoutCtrl();
     setDetent(isWide() ? 'half' : 'peek');
     showHome();
@@ -2238,8 +2275,14 @@
       if (Math.abs(d) > 0.4) { ME.hdg = (ME.hdg + d * 0.2 + 360) % 360; busy = true; } else ME.hdg = ME.hdgTo;
       if (meMarker) meMarker.setRotation(ME.hdg);
     }
-    // 鏡頭跟著藍點走（地圖自己在動畫或使用者在拖的時候不搶）
-    if (ME.cur && map && !(map.isMoving && map.isMoving())) {
+    // 鏡頭跟著藍點走（地圖自己在動畫、或手指還在地圖上時不搶，不然縮放、拖動會被打斷）
+    const following = S.track !== 'off' || !!(S.nav?.active && S.nav.follow);
+    if (ME.cur && map && following && userBusy()) busy = true;   // 等手放開再跟
+    else if (ME.cur && map && following && S.recenter && !(map.isMoving && map.isMoving())) {
+      S.recenter = false;
+      const N = S.nav;
+      map.easeTo({ center: ME.cur, duration: 450, ...(N?.active ? { bearing: ME.hdg ?? map.getBearing(), padding: navPad() } : S.track === 'heading' && ME.hdg != null ? { bearing: ME.hdg } : {}) });
+    } else if (ME.cur && map && !(map.isMoving && map.isMoving())) {
       const N = S.nav;
       if (N?.active) { if (N.follow && N.camReady) map.jumpTo({ center: ME.cur, bearing: ME.hdg ?? map.getBearing(), padding: navPad() }); }
       else if (S.track === 'follow') map.jumpTo({ center: ME.cur });
@@ -2265,6 +2308,7 @@
     const b = $('#bLoc');
     b.dataset.mode = m;
     b.innerHTML = LOC_ICON[m];
+    applyGestureMode();
     b.setAttribute('aria-label', m === 'off' ? '我的位置' : m === 'follow' ? '跟隨中（再點一下：地圖跟著你的方向轉）' : '方向跟隨中（再點一下：北朝上）');
     if (m === 'follow' && Math.abs(map.getBearing()) > 0.5) map.easeTo({ bearing: 0, duration: 400 });
     if (m === 'heading' && S.hdg != null) map.easeTo({ center: S.me || map.getCenter(), bearing: S.hdg, duration: 400 });
@@ -2272,9 +2316,11 @@
   }
   function updCompass() {
     const el = $('#bNorth'); if (!el || !map) return;
-    const b = map.getBearing();
-    const show = Math.abs(b) > 0.5 || S.track === 'heading';
-    if (el.hidden === show) { el.hidden = !show; layoutCtrl(); }
+    const b = map.getBearing(), ab = Math.abs(((b + 540) % 360) - 180);
+    const on = el.classList.contains('show');
+    // 出現要轉超過 4°，消失要回到 1° 以內：在邊界不會一直閃
+    const want = S.track === 'heading' || S.nav?.active ? true : on ? ab > 1 : ab > 4;
+    if (want !== on) el.classList.toggle('show', want);
     el.firstElementChild.style.transform = `rotate(${-b}deg)`;
   }
   function resetNorth() {
@@ -2356,7 +2402,7 @@
   }
 
   function locate() {
-    if (S.nav?.active) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; return; }
+    if (S.nav?.active) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; applyGestureMode(); return; }
     if (!navigator.geolocation) return toast('這個瀏覽器不支援定位');
     startCompass();
     if (S.track === 'follow') {
@@ -2411,14 +2457,12 @@
     if (mode === 'split') {
       document.body.classList.remove('pip', 'pip-left');
       $('#pipZone').hidden = true;
-      $('#yt').hidden = !YT.open;
-      $('#ytFab').hidden = YT.open;
-      document.body.classList.toggle('ytsplit', YT.open);
+      if (!YT.open) { $('#yt').hidden = true; document.body.classList.remove('ytdock', 'ytsplit', 'ytmap'); $('#ytFab').hidden = false; }
       updSplit();
       setQMode(S.qMode);
       return;
     }
-    document.body.classList.remove('ytsplit'); updSplit();
+    document.body.classList.remove('ytsplit', 'ytdock', 'ytmap'); updSplit();
     document.body.classList.toggle('pip', pip);
     document.body.classList.toggle('pip-left', LS.getItem('pip.side') === 'left');
     $('#pipZone').classList.toggle('playing', !!YT.pipPlaying);
@@ -2433,31 +2477,50 @@
   }
   // 分割畫面：量 YouTube 那塊多大，地圖、抽屜、按鈕跟著讓位
   const splitSide = () => isWide() || window.matchMedia('(orientation: landscape)').matches;
-  function updSplit() {
+  function updSplit(force) {
     const on = document.body.classList.contains('ytsplit');
     const root = document.documentElement.style;
     const w = on && splitSide() ? Math.round(Math.min(window.innerWidth * 0.42, 480)) : 0;
     const h = on && !splitSide() ? Math.round($('#yt').getBoundingClientRect().height) : 0;
     const was = root.getPropertyValue('--yth') + root.getPropertyValue('--ytw');
     root.setProperty('--ytw', w + 'px'); root.setProperty('--yth', h + 'px');
-    if (was === (h + 'px') + (w + 'px')) return;
+    if (was === (h + 'px') + (w + 'px') && !force) return;
     requestAnimationFrame(() => {
       try { map?.resize?.(); } catch { /* 地圖還沒好 */ }
       if (typeof setDetent === 'function' && !S.nav?.active) setDetent(sheet().dataset.d);
       layoutCtrl();
     });
   }
+  // 打開：面板從下面（電腦從右邊）滑進來，停好之後地圖才讓位（地圖縮小的瞬間被面板蓋住，看不到跳動）
   function openYtPanel() {
+    const el = $('#yt');
     YT.open = true;
-    $('#yt').hidden = false; $('#yt').classList.remove('mini');
-    if (!YT.player) { $('#ytPick').hidden = false; renderYtList(); }
-    applyYtMode();
+    clearTimeout(YT.animT);
+    const split = ytMode() === 'split';
+    if (split) document.body.classList.add('ytdock');
+    $('#ytFab').hidden = true;
+    el.classList.remove('mini');
+    if (!YT.player) { $('#ytPick').hidden = false; renderYtList(YT.results); }
+    if (el.hidden) { el.classList.add('off'); el.hidden = false; void el.offsetWidth; }
+    // 抽屜和按鈕跟面板一起滑上去（ytsplit）；地圖等面板停好才縮（ytmap），縮的瞬間被面板蓋住
+    if (split) { document.body.classList.add('ytsplit'); updSplit(); }
+    el.classList.remove('off');
+    YT.animT = setTimeout(() => { if (YT.open && split) { document.body.classList.add('ytmap'); updSplit(true); } }, 500);
   }
+  // 關閉：地圖先在面板後面長回來，面板再滑出去
   function closeYtPanel() {
+    const el = $('#yt');
     try { YT.player?.stopVideo(); } catch { /* 忽略 */ }
     YT.open = false;
-    $('#yt').hidden = true; $('#ytFab').hidden = false;
-    applyYtMode();
+    clearTimeout(YT.animT);
+    document.body.classList.remove('ytsplit', 'ytmap'); updSplit(true);
+    el.classList.add('off');
+    YT.animT = setTimeout(() => {
+      if (YT.open) return;
+      el.hidden = true; el.classList.remove('off');
+      document.body.classList.remove('ytdock');
+      $('#ytFab').hidden = false;
+    }, 520);
   }
   function layoutYT() {
     const tall = document.body.classList.contains('sheet-tall');
@@ -2498,7 +2561,7 @@
     if (queue) { YT.queue = queue; YT.qi = idx ?? queue.indexOf(item); }
     else if (!YT.queue.includes(item)) { YT.queue = [item]; YT.qi = 0; }
     YT.cur = item;
-    if (ytMode() === 'split' && !YT.open) openYtPanel();
+    if (!YT.open && ytMode() !== 'pip') openYtPanel();
     updYtNav();
     $('#ybox').hidden = false; $('#ytPick').hidden = true; $('#ytPlay').hidden = false;
     $('#yt').classList.remove('mini');
@@ -2526,7 +2589,8 @@
         });
       }
       if (YT.player) YT.player.__list = !!item.listId;
-      $('#ytTitle').textContent = item.title || 'YouTube';
+      const tt = $('#ytTitle'); tt.style.opacity = 0;
+      setTimeout(() => { tt.textContent = item.title || 'YouTube'; tt.style.opacity = 1; }, 160);
       setTimeout(updSplit, 50);
     } catch (e) { toast(e.message || String(e)); }
   }
@@ -2578,8 +2642,26 @@
       return !!j.tdx;
     } catch (e) { say(`連不上中繼站：${e.message || e}`, 'err'); if (!show) toast('連不上中繼站，交通資料可能載不到'); return false; }
   }
-  function openDialog(id) { const d = document.getElementById(id); d.hidden = false; }
-  function closeDialog(id) { document.getElementById(id).hidden = true; }
+  function openDialog(id) {
+    const d = document.getElementById(id);
+    clearTimeout(d._t); d.hidden = false;
+    void d.offsetWidth;            // 先畫出「關著」的樣子，再加 open 才會有滑上來的動畫
+    d.classList.add('open');
+  }
+  function closeDialog(id) {
+    const d = document.getElementById(id);
+    if (d.hidden) return;
+    d.classList.remove('open');
+    clearTimeout(d._t); d._t = setTimeout(() => { d.hidden = true; }, 420);
+  }
+  // 圖層選單：從按鈕那裡長出來、縮回去
+  const popOpen = () => $('#layerPop').classList.contains('open');
+  function showPop(on) {
+    const el = $('#layerPop');
+    clearTimeout(el._t);
+    if (on) { el.hidden = false; void el.offsetWidth; el.classList.add('open'); }
+    else if (!el.hidden) { el.classList.remove('open'); el._t = setTimeout(() => { el.hidden = true; }, 320); }
+  }
   function openSettings(msg) {
     const k = tdx.getKey();
     $('#kId').value = k.id; $('#kSecret').value = k.secret;
@@ -2662,8 +2744,8 @@
   }
   let toastT;
   function toast(msg) {
-    const t = $('#toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3600);
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('show'); }, 3600);
   }
   function showWelcome(v) { $('#welcome').hidden = !v; if (!v) LS.setItem('welcomed', '1'); }
 
@@ -2677,6 +2759,7 @@
     else turn.style.width = '';
     const y = turn.hidden ? top : turn.getBoundingClientRect().bottom + 10;
     $('#ctrl').style.top = y + 'px';
+    $('#bNorth').style.top = (y + $('#ctrl').offsetHeight + 12) + 'px';
     $('#layerPop').style.top = y + 'px';
   }
 
@@ -2691,6 +2774,7 @@
       const act = a.dataset.act;
       if (act === 'relocate') { S.locFail = ''; showHome(); return firstLocate(); }
       if (act === 'savePlace') return openSaveBox(S.saveDest);
+      if (act === 'home') S.navDir = 'back';
       if (act === 'home' && S.backFn) { const f = S.backFn; S.backFn = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); if (S.nav) S.nav = null; } return f(); }
       if (act === 'home') { clearBus(); clearSearchPins(); S.place = null; S.lastG = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); destMarker?.remove(); S.nav = null; } showHome(); }
       if (act === 'settings') openSettings();
@@ -2711,7 +2795,7 @@
     $('#q').addEventListener('focus', () => { if (!isWide() && sheet().dataset.d === 'peek') setDetent('half'); });
     document.addEventListener('focusout', (e) => { if (e.target.matches?.('input,textarea,select')) setTimeout(() => window.scrollTo(0, 0), 60); });
 
-    $('#bLayers').addEventListener('click', () => { renderLayerPop(); $('#layerPop').hidden = !$('#layerPop').hidden; layoutCtrl(); });
+    $('#bLayers').addEventListener('click', () => { renderLayerPop(); layoutCtrl(); showPop(!popOpen()); });
     $('#layerPop').addEventListener('click', (e) => {
       const r = e.target.closest('.lrow'); if (!r) return;
       if (r.dataset.k) toggleLayer(r.dataset.k);
@@ -2728,7 +2812,7 @@
     $('#bLoc').addEventListener('click', locate);
     $('#bNorth').addEventListener('click', resetNorth);
     $('#bSet').addEventListener('click', () => openSettings());
-    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; if (S.nav.last) onPosition(S.nav.last, null, null); } });
+    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; applyGestureMode(); if (S.nav.last) onPosition(S.nav.last, null, null); } });
 
     // 設定
     $('#kSave').addEventListener('click', saveKey);
@@ -2774,7 +2858,7 @@
     $('#reWelcome').addEventListener('click', () => { closeDialog('setDlg'); showWelcome(true); });
     document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeDialog(b.dataset.close)));
     document.querySelectorAll('.dlg').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.hidden = true; }));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.querySelectorAll('.dlg').forEach((d) => { d.hidden = true; }); $('#layerPop').hidden = true; } });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.querySelectorAll('.dlg').forEach((d) => closeDialog(d.id)); showPop(false); } });
 
     // 歡迎頁
     $('#wKey').addEventListener('click', () => { showWelcome(false); if (!tdx.ready()) openSettings(); });
@@ -2792,8 +2876,7 @@
     $('#pipHide').addEventListener('click', () => { LS.setItem('pip.hide', '1'); applyYtMode(); });
     $('#ytFab').addEventListener('click', () => {
       if (ytMode() === 'pip') return openYouTubeApp();
-      if (ytMode() === 'split') return openYtPanel();
-      $('#yt').hidden = false; $('#ytFab').hidden = true; $('#yt').classList.remove('mini'); renderYtList();
+      openYtPanel();
     });
     $('#ytForm').addEventListener('submit', (e) => { e.preventDefault(); ytSubmit(); });
     $('#ytSwap').addEventListener('click', () => { $('#ytPick').hidden = !$('#ytPick').hidden; $('#yt').classList.remove('mini'); renderYtList(YT.results); updSplit(); });
@@ -2813,7 +2896,7 @@
     new ResizeObserver(() => updSplit()).observe($('#yt'));
     window.addEventListener('resize', () => updSplit());
     $('#ytClose').addEventListener('click', () => {
-      if (ytMode() === 'split') return closeYtPanel(); try { YT.player?.stopVideo(); } catch { /* 忽略 */ } $('#yt').hidden = true; $('#ytFab').hidden = false; });
+      closeYtPanel(); });
     $('#ytPlay').addEventListener('click', () => { const p = YT.player; if (!p?.getPlayerState) return; p.getPlayerState() === 1 ? p.pauseVideo() : p.playVideo(); });
 
     darkMQ.addEventListener?.('change', () => applyBase());

@@ -199,7 +199,7 @@ svg { display: block; }
   position: fixed; z-index: 9; left: 8px; right: 8px; bottom: 8px; border-radius: var(--r-lg);
   display: flex; flex-direction: column; max-height: calc(100% - env(safe-area-inset-top, 0px) - 70px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  transition: height .38s cubic-bezier(.2, .9, .25, 1), width .3s, right .3s;
+  transition: height .38s cubic-bezier(.2, .9, .25, 1), width .3s, right .3s, left .45s cubic-bezier(.32, .72, 0, 1), bottom .5s cubic-bezier(.32, .72, 0, 1);
 }
 #sheet.dragging { transition: none; }
 #sheet[data-d="peek"] #sheetBody { visibility: hidden; }
@@ -409,19 +409,19 @@ body.navigating #hudDate { display: none; }
 :root { --yth: 0px; --ytw: 0px; }
 #ytPaste { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-bottom: 8px; height: 38px; border-radius: 12px; background: var(--fill); color: var(--red); font-weight: 600; font-size: 14px; }
 #ytPaste svg { width: 17px; height: 17px; }
-body.ytsplit #ytFab, body.ytsplit #pipZone { display: none !important; }
-body.ytsplit #ytSize { display: none; }
-body.ytsplit #map { right: var(--ytw); bottom: var(--yth); height: auto; }
+body.ytdock #ytFab, body.ytdock #pipZone { display: none !important; }
+body.ytdock #ytSize { display: none; }
+body.ytmap #map { right: var(--ytw); bottom: var(--yth); height: auto; }
 body.ytsplit #attr { bottom: calc(var(--yth) + 2px); }
 body.ytsplit #follow, body.ytsplit #toast { bottom: calc(var(--yth) + var(--sheet-h) + 18px); }
 @media (max-width: 899px) and (orientation: portrait) {
-  body.ytsplit #yt, body.ytsplit #yt[data-size] { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 62%; border-radius: 22px 22px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; display: flex; flex-direction: column; }
-  body.ytsplit #yt #ytPick { overflow-y: auto; min-height: 0; }
+  body.ytdock #yt, body.ytdock #yt[data-size] { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 62%; border-radius: 22px 22px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; display: flex; flex-direction: column; }
+  body.ytdock #yt #ytPick { overflow-y: auto; min-height: 0; }
   body.ytsplit #ytList { max-height: none; }
   body.ytsplit #sheet { bottom: calc(var(--yth) + 8px); padding-bottom: 0; max-height: calc(100% - var(--yth) - env(safe-area-inset-top, 0px) - 70px); }
 }
 @media (min-width: 900px), (orientation: landscape) {
-  body.ytsplit #yt, body.ytsplit #yt[data-size] { top: 0; right: 0; bottom: 0; left: auto; width: var(--ytw); border-radius: 0; padding-top: env(safe-area-inset-top, 0px); overflow-y: auto; z-index: 10; }
+  body.ytdock #yt, body.ytdock #yt[data-size] { top: 0; right: 0; bottom: 0; left: auto; width: min(42vw, 480px); border-radius: 0; padding-top: env(safe-area-inset-top, 0px); overflow-y: auto; z-index: 10; }
   body.ytsplit #ctrl, body.ytsplit #turn { right: calc(var(--ytw) + 12px); }
   body.ytsplit #layerPop { right: calc(var(--ytw) + 66px); }
   body.ytsplit #ytList { max-height: none; }
@@ -637,6 +637,72 @@ body { font-size: 17px; letter-spacing: -.01em; }
 .back { width: 36px; height: 36px; border-radius: 50%; background: var(--cell); color: var(--ink); display: grid; place-items: center; margin: 0 0 8px; box-shadow: var(--hl); }
 .back svg { width: 18px; height: 18px; }
 .back:active { background: var(--cell-press); }
+/* ======================================================
+   動畫層 —— 第一原則：有質感（Apple 的彈簧曲線）；第二原則：好用（不擋手、不亂跳）
+   ====================================================== */
+:root { --spring: cubic-bezier(.32, .72, 0, 1); }
+/* 按下去縮一點、放開彈回 */
+.btn, #ctrl button, #bNorth, .mode, #ytFab, .rtabs button, .chip, .back, .ythead button, #pipOpen, #ytPaste, .seg button, .card-h button, .cell.act {
+  transition: transform .25s var(--spring), background-color .2s, color .2s, opacity .2s; }
+.btn:active, #ctrl button:active, #bNorth:active, .mode:active, #ytFab:active, .rtabs button:active, .chip:active, .back:active,
+.ythead button:active, #pipOpen:active, #ytPaste:active, .seg button:active { transform: scale(.9); transition-duration: .08s; }
+.item { transition: background-color .15s, transform .25s var(--spring); }
+.item:active { transform: scale(.985); }
+/* 抽屜內容換頁：往前從右邊滑進來、返回從左邊滑進來 */
+@keyframes inFwd { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes inBack { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: none; } }
+@keyframes inUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+#sheetBody.in-fwd > * { animation: inFwd .42s var(--spring) both; }
+#sheetBody.in-back > * { animation: inBack .42s var(--spring) both; }
+#sheetBody.in-up > * { animation: inUp .4s var(--spring) both; }
+#sheetBody[class*="in-"] > :nth-child(2) { animation-delay: .03s; }
+#sheetBody[class*="in-"] > :nth-child(3) { animation-delay: .06s; }
+#sheetBody[class*="in-"] > :nth-child(n+4) { animation-delay: .09s; }
+/* 清單一筆一筆浮出來（搜尋結果、轉乘方案） */
+.stagger > * { animation: inUp .42s var(--spring) both; }
+.stagger > :nth-child(2) { animation-delay: .035s; } .stagger > :nth-child(3) { animation-delay: .07s; }
+.stagger > :nth-child(4) { animation-delay: .105s; } .stagger > :nth-child(5) { animation-delay: .14s; }
+.stagger > :nth-child(n+6) { animation-delay: .17s; }
+/* 提示訊息：浮上來、淡出 */
+#toast { display: block; opacity: 0; transform: translate(-50%, 16px) scale(.94); pointer-events: none; transition: opacity .25s, transform .45s var(--spring); }
+#toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* 圖層選單：從按鈕那裡長出來 */
+#layerPop { transform-origin: top right; transition: opacity .22s, transform .42s var(--spring); }
+#layerPop:not(.open) { opacity: 0; transform: scale(.82); pointer-events: none; }
+/* 設定、紀錄：手機從下面滑上來；電腦放大淡入 */
+.dlg { transition: background-color .35s; }
+.dlg:not(.open) { background-color: rgba(0, 0, 0, 0); }
+.dlg > .card { transition: transform .5s var(--spring), opacity .3s; }
+.dlg:not(.open) > .card { transform: translateY(105%); }
+@media (min-width: 700px) { .dlg:not(.open) > .card { transform: scale(.94); opacity: 0; } }
+/* 導航用的卡片：出現時彈出來 */
+@keyframes popIn { from { opacity: 0; transform: translateY(-12px) scale(.95); } to { opacity: 1; transform: none; } }
+@keyframes popInC { from { opacity: 0; transform: translate(-50%, 12px) scale(.95); } to { opacity: 1; transform: translate(-50%, 0); } }
+#turn:not([hidden]), #hudSpeed:not([hidden]), #hudCam:not([hidden]) { animation: popIn .5s var(--spring) both; }
+#follow:not([hidden]) { animation: popInC .5s var(--spring) both; }
+@media (min-width: 900px) { #follow:not([hidden]) { animation: popIn .5s var(--spring) both; } }
+/* 指南針：獨立圓鈕在按鈕組下面，淡入淡出，不會把設定擠下去 */
+#bNorth { position: fixed; z-index: 5; right: 14px; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  transition: opacity .3s, transform .45s var(--spring), top .35s var(--spring), right .5s var(--spring); }
+#bNorth:not(.show) { opacity: 0; transform: scale(.5); pointer-events: none; }
+#bNorth svg { transition: none; }
+body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
+#ctrl { transition: top .35s var(--spring), right .5s var(--spring); }
+#turn { transition: right .5s var(--spring); }
+/* YouTube：滑進來、滑出去；縮小時影片收起來 */
+@keyframes fabIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+#ytFab:not([hidden]) { animation: fabIn .5s var(--spring) both; }
+#yt { transition: transform .55s var(--spring), opacity .35s, width .45s var(--spring); }
+#yt.off { opacity: 0; transform: translateY(18px) scale(.94); }
+@media (max-width: 899px) and (orientation: portrait) { body.ytdock #yt.off { opacity: 1; transform: translateY(105%); } }
+@media (min-width: 900px), (orientation: landscape) { body.ytdock #yt.off { opacity: 1; transform: translateX(105%); } }
+.ybox { max-height: 70vh; overflow: hidden; transition: max-height .5s var(--spring), opacity .35s; }
+#yt.mini .ybox { position: relative; width: auto; height: auto; max-height: 0; opacity: 0; pointer-events: none; }
+#yt.mini .ybox::before { content: none; }
+#ytTitle { transition: opacity .25s; }
+/* 開導航時底下的抽屜、按鈕也滑順 */
+#hud { transition: min-width .3s var(--spring); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
@@ -660,12 +726,12 @@ body { font-size: 17px; letter-spacing: -.01em; }
 </div>
 
 <div id="ctrl" class="glass">
+  <button id="bSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <button id="bLayers" aria-label="圖層"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 16.5 9.5 5 9.5-5" opacity=".55"/></svg></button>
   <button id="b3d" aria-label="3D 視角"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="M12 12 20 7.4M12 12v9.2M12 12 4 7.4"/></svg></button>
   <button id="bLoc" aria-label="我的位置" data-mode="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20.6 3.4 3.7 10.3c-.8.3-.7 1.4.1 1.6l6.8 1.6 1.6 6.8c.2.8 1.3.9 1.6.1L20.6 3.4z"/></svg></button>
-  <button id="bNorth" aria-label="指南針（點一下回到北朝上）" hidden><svg viewBox="0 0 24 24"><path d="M12 2.5 15.2 12H8.8z" fill="#ff3b30"/><path d="M12 21.5 8.8 12h6.4z" fill="currentColor" opacity=".5"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg></button>
-  <button id="bSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </div>
+  <button id="bNorth" class="glass" aria-label="指南針（點一下回到北朝上）"><svg viewBox="0 0 24 24"><path d="M12 2.5 15.2 12H8.8z" fill="#ff3b30"/><path d="M12 21.5 8.8 12h6.4z" fill="currentColor" opacity=".5"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg></button>
 
 <div id="layerPop" class="glass" hidden></div>
 <div id="sv" hidden><div id="svPano"></div><button id="svClose" class="glass">完成</button></div>
@@ -796,7 +862,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
   </div>
 </div>
 
-<div id="toast" class="glass" hidden role="status"></div>
+<div id="toast" class="glass" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
@@ -2178,7 +2244,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
       if (map) map._g.setMapTypeId(gBase);
       S.effBase = gBase;
       applyTraffic(); updAttr();
-      if (!$('#layerPop').hidden) renderLayerPop();
+      if (popOpen()) renderLayerPop();
       return;
     }
     if (!map || !map.getLayer('bm-emap')) return;
@@ -2192,7 +2258,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     updAttr();
     applyPalette();
     applyTraffic();
-    if (!$('#layerPop').hidden) renderLayerPop();
+    if (popOpen()) renderLayerPop();
   }
   // 地圖轉超過 3° 就換向量圖，轉回 0.5° 以內才換回（避免在邊界來回閃）
   function onRotateBase() {
@@ -2330,11 +2396,37 @@ body { font-size: 17px; letter-spacing: -.01em; }
       };
     });
   }
+  S.touches = 0; S.ptr = false; S.lastGesture = 0;
+  const userBusy = () => S.touches > 0 || S.ptr || performance.now() - S.lastGesture < 450;
+  function watchGestures() {
+    const el = $('#map');
+    const t = (e) => { S.touches = e.touches.length; S.lastGesture = performance.now(); if (!S.touches) gestureEnd(); };
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((k) => el.addEventListener(k, t, { passive: true, capture: true }));
+    el.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') { S.ptr = true; S.lastGesture = performance.now(); } }, { capture: true });
+    window.addEventListener('pointerup', () => { if (S.ptr) { S.ptr = false; S.lastGesture = performance.now(); gestureEnd(); } });
+    el.addEventListener('wheel', () => { S.lastGesture = performance.now(); clearTimeout(S.wheelT); S.wheelT = setTimeout(gestureEnd, 300); }, { passive: true, capture: true });
+  }
+  // 放開手：跟隨中就平順地回到你身上（不是瞬間跳回去）
+  function gestureEnd() {
+    if (S.track !== 'off' || (S.nav?.active && S.nav.follow)) S.recenter = true;
+    kickMe();
+  }
+  // 跟隨中：兩指縮放以畫面中心（＝你）為準、方向跟隨時不讓手指轉地圖
+  function applyGestureMode() {
+    if (!map || G || !map.touchZoomRotate) return;
+    const follow = S.track !== 'off' || !!(S.nav?.active && S.nav.follow);
+    const opt = follow ? { around: 'center' } : undefined;
+    map.touchZoomRotate.enable(opt);
+    map.scrollZoom.disable(); map.scrollZoom.enable(opt);
+    if (S.track === 'heading' || (S.nav?.active && S.nav.follow)) map.touchZoomRotate.disableRotation(); else map.touchZoomRotate.enableRotation();
+  }
   function bindMapCommon() {
     guardCamera();
+    watchGestures();
     map.on('load', onMapLoad);
     map.on('dragstart', () => {
-      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; }
+      if (S.touches >= 2) return;   // 兩指縮放：繼續跟著你（像 Apple 地圖）
+      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; applyGestureMode(); }
       else if (S.track !== 'off') setTrack('off');
     });
     map.on('rotate', () => { updCompass(); onRotateBase(); });
@@ -2518,7 +2610,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     // 地圖拖到別的縣市（拉近到市區程度時）自動換縣市資料
     map.on('moveend', () => { if (!S.nav?.active && map.getZoom() >= 10.5 && S.track === 'off') autoCounty(map.getCenter().toArray()); });
     map.on('click', (e) => {
-      $('#layerPop').hidden = true;
+      showPop(false);
       const order = ['search-pt', 'bus-st', 'bike-pt', 'bike-cluster', 'speedcam', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines'];
       const hits = map.queryRenderedFeatures(e.point, { layers: order.filter((l) => map.getLayer(l)) });
       if (hits.length) {
@@ -2826,10 +2918,20 @@ body { font-size: 17px; letter-spacing: -.01em; }
 
   function setBody(html, view) {
     stopTimers();
+    const changed = view !== S.view || S.navDir;
     S.view = view;
     S.backFn = null;   // 「返回」預設回首頁；要回上一頁的畫面自己再設
-    $('#sheetBody').innerHTML = html;
-    $('#sheetBody').scrollTop = 0;
+    const body = $('#sheetBody');
+    body.innerHTML = html;
+    body.scrollTop = 0;
+    if (changed && view !== 'nav') {
+      // 往前：從右邊滑進來；返回：從左邊；回首頁：往上浮
+      const dir = S.navDir || (view === 'home' ? 'up' : 'fwd');
+      body.classList.remove('in-fwd', 'in-back', 'in-up'); void body.offsetWidth;
+      body.classList.add('in-' + dir);
+      clearTimeout(body._t); body._t = setTimeout(() => body.classList.remove('in-' + dir), 600);
+    }
+    S.navDir = null;
     if (sheet().dataset.d === 'peek' && view !== 'nav' && view !== 'home') setDetent('half');
   }
   function stopTimers() { S.timers.forEach(clearInterval); S.timers = []; }
@@ -3421,7 +3523,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
       const pts = rows.map((r) => r.p);
       const bb = bboxOf({ coordinates: pts });
       if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 700, maxZoom: 16 });
-      $('#rBody').innerHTML = `<div class="list">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
+      $('#rBody').innerHTML = `<div class="list stagger">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
       $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(rows[+b.dataset.i])));
     } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗：' + gHint(e, 'Places API (New)'))); }
   }
@@ -3718,7 +3820,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
           if (c.deg != null) props.dir = c.deg;
           return { type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: props };
         }) });
-        if (!$('#layerPop').hidden) renderLayerPop();
+        if (popOpen()) renderLayerPop();
         return SC.list;
       }).catch((e) => { SC.loading = null; SC.err = true; throw e; });
     }
@@ -3833,7 +3935,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     const box = $('#rtBody'); if (!box) return;
     drawTransitOnMap(T.routes[0]);
     $('#rt-transit') && ($('#rt-transit').textContent = C.fmtDur(T.routes[0].duration));
-    box.innerHTML = `<div class="list">${T.routes.map((r, i) => {
+    box.innerHTML = `<div class="list stagger">${T.routes.map((r, i) => {
       const t = transitTimes(r);
       const walkMin = Math.round(r.segs.filter((s) => s.kind === 'walk').reduce((a, s) => a + s.duration, 0) / 60);
       const first = r.segs.find((s) => s.kind === 'transit');
@@ -3852,7 +3954,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     S.backFn = () => { previewRoute(T.dest, 'transit', T); };
     const t = transitTimes(r);
     box.innerHTML = `<div class="sec route-sum"><b>${C.fmtDur(r.duration)}</b><div>${hhmm(t.start)} 出發・${hhmm(t.end)} 抵達${r.fare ? '・' + esc(r.fare) : ''}</div></div>
-      <ol class="tl">${r.segs.map((s, k) => (s.kind === 'walk'
+      <ol class="tl stagger">${r.segs.map((s, k) => (s.kind === 'walk'
         ? `<li class="walk"><div class="t1">步行 ${Math.max(1, Math.round(s.duration / 60))} 分鐘</div><div class="t2">${C.fmtDist(s.distance)}</div></li>`
         : `<li style="--c:${esc(s.color)}"><div class="t1"><span class="lchip" style="background:${esc(s.color)};color:${esc(s.textColor)}">${esc(s.vehicle)} ${esc(s.line)}</span> ${s.headsign ? '往 ' + esc(s.headsign) : ''}</div>
             <div class="t2">${hhmm(s.dep)} ${esc(s.from)} 上車</div>
@@ -3972,7 +4074,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     const N = S.nav; if (!N) return;
     if (!sim) startCompass();   // 按「出發」當下要指南針權限（iPhone 規定要在點按時要）
     if (SC.on && ['car', 'scooter'].includes(N.mode)) loadSpeedcam().catch(() => {});
-    N.active = true; N.sim = sim; N.cur = 0; N.follow = true; N.off = 0; N.lastReroute = 0; N.said = {}; N.simM = 0;
+    N.active = true; N.sim = sim; N.cur = 0; N.follow = true; setTimeout(applyGestureMode, 0); N.off = 0; N.lastReroute = 0; N.said = {}; N.simM = 0;
     $('#turn').hidden = false;
     $('#hudSpeed').hidden = false;
     document.body.classList.add('navigating');
@@ -4085,6 +4187,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#sheetBody').style.paddingTop = '';
     $('#sheetBody').style.visibility = '';
     S.nav = null;
+    applyGestureMode();
     layoutCtrl();
     setDetent(isWide() ? 'half' : 'peek');
     showHome();
@@ -4160,8 +4263,14 @@ body { font-size: 17px; letter-spacing: -.01em; }
       if (Math.abs(d) > 0.4) { ME.hdg = (ME.hdg + d * 0.2 + 360) % 360; busy = true; } else ME.hdg = ME.hdgTo;
       if (meMarker) meMarker.setRotation(ME.hdg);
     }
-    // 鏡頭跟著藍點走（地圖自己在動畫或使用者在拖的時候不搶）
-    if (ME.cur && map && !(map.isMoving && map.isMoving())) {
+    // 鏡頭跟著藍點走（地圖自己在動畫、或手指還在地圖上時不搶，不然縮放、拖動會被打斷）
+    const following = S.track !== 'off' || !!(S.nav?.active && S.nav.follow);
+    if (ME.cur && map && following && userBusy()) busy = true;   // 等手放開再跟
+    else if (ME.cur && map && following && S.recenter && !(map.isMoving && map.isMoving())) {
+      S.recenter = false;
+      const N = S.nav;
+      map.easeTo({ center: ME.cur, duration: 450, ...(N?.active ? { bearing: ME.hdg ?? map.getBearing(), padding: navPad() } : S.track === 'heading' && ME.hdg != null ? { bearing: ME.hdg } : {}) });
+    } else if (ME.cur && map && !(map.isMoving && map.isMoving())) {
       const N = S.nav;
       if (N?.active) { if (N.follow && N.camReady) map.jumpTo({ center: ME.cur, bearing: ME.hdg ?? map.getBearing(), padding: navPad() }); }
       else if (S.track === 'follow') map.jumpTo({ center: ME.cur });
@@ -4187,6 +4296,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     const b = $('#bLoc');
     b.dataset.mode = m;
     b.innerHTML = LOC_ICON[m];
+    applyGestureMode();
     b.setAttribute('aria-label', m === 'off' ? '我的位置' : m === 'follow' ? '跟隨中（再點一下：地圖跟著你的方向轉）' : '方向跟隨中（再點一下：北朝上）');
     if (m === 'follow' && Math.abs(map.getBearing()) > 0.5) map.easeTo({ bearing: 0, duration: 400 });
     if (m === 'heading' && S.hdg != null) map.easeTo({ center: S.me || map.getCenter(), bearing: S.hdg, duration: 400 });
@@ -4194,9 +4304,11 @@ body { font-size: 17px; letter-spacing: -.01em; }
   }
   function updCompass() {
     const el = $('#bNorth'); if (!el || !map) return;
-    const b = map.getBearing();
-    const show = Math.abs(b) > 0.5 || S.track === 'heading';
-    if (el.hidden === show) { el.hidden = !show; layoutCtrl(); }
+    const b = map.getBearing(), ab = Math.abs(((b + 540) % 360) - 180);
+    const on = el.classList.contains('show');
+    // 出現要轉超過 4°，消失要回到 1° 以內：在邊界不會一直閃
+    const want = S.track === 'heading' || S.nav?.active ? true : on ? ab > 1 : ab > 4;
+    if (want !== on) el.classList.toggle('show', want);
     el.firstElementChild.style.transform = `rotate(${-b}deg)`;
   }
   function resetNorth() {
@@ -4278,7 +4390,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
   }
 
   function locate() {
-    if (S.nav?.active) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; return; }
+    if (S.nav?.active) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; applyGestureMode(); return; }
     if (!navigator.geolocation) return toast('這個瀏覽器不支援定位');
     startCompass();
     if (S.track === 'follow') {
@@ -4333,14 +4445,12 @@ body { font-size: 17px; letter-spacing: -.01em; }
     if (mode === 'split') {
       document.body.classList.remove('pip', 'pip-left');
       $('#pipZone').hidden = true;
-      $('#yt').hidden = !YT.open;
-      $('#ytFab').hidden = YT.open;
-      document.body.classList.toggle('ytsplit', YT.open);
+      if (!YT.open) { $('#yt').hidden = true; document.body.classList.remove('ytdock', 'ytsplit', 'ytmap'); $('#ytFab').hidden = false; }
       updSplit();
       setQMode(S.qMode);
       return;
     }
-    document.body.classList.remove('ytsplit'); updSplit();
+    document.body.classList.remove('ytsplit', 'ytdock', 'ytmap'); updSplit();
     document.body.classList.toggle('pip', pip);
     document.body.classList.toggle('pip-left', LS.getItem('pip.side') === 'left');
     $('#pipZone').classList.toggle('playing', !!YT.pipPlaying);
@@ -4355,31 +4465,50 @@ body { font-size: 17px; letter-spacing: -.01em; }
   }
   // 分割畫面：量 YouTube 那塊多大，地圖、抽屜、按鈕跟著讓位
   const splitSide = () => isWide() || window.matchMedia('(orientation: landscape)').matches;
-  function updSplit() {
+  function updSplit(force) {
     const on = document.body.classList.contains('ytsplit');
     const root = document.documentElement.style;
     const w = on && splitSide() ? Math.round(Math.min(window.innerWidth * 0.42, 480)) : 0;
     const h = on && !splitSide() ? Math.round($('#yt').getBoundingClientRect().height) : 0;
     const was = root.getPropertyValue('--yth') + root.getPropertyValue('--ytw');
     root.setProperty('--ytw', w + 'px'); root.setProperty('--yth', h + 'px');
-    if (was === (h + 'px') + (w + 'px')) return;
+    if (was === (h + 'px') + (w + 'px') && !force) return;
     requestAnimationFrame(() => {
       try { map?.resize?.(); } catch { /* 地圖還沒好 */ }
       if (typeof setDetent === 'function' && !S.nav?.active) setDetent(sheet().dataset.d);
       layoutCtrl();
     });
   }
+  // 打開：面板從下面（電腦從右邊）滑進來，停好之後地圖才讓位（地圖縮小的瞬間被面板蓋住，看不到跳動）
   function openYtPanel() {
+    const el = $('#yt');
     YT.open = true;
-    $('#yt').hidden = false; $('#yt').classList.remove('mini');
-    if (!YT.player) { $('#ytPick').hidden = false; renderYtList(); }
-    applyYtMode();
+    clearTimeout(YT.animT);
+    const split = ytMode() === 'split';
+    if (split) document.body.classList.add('ytdock');
+    $('#ytFab').hidden = true;
+    el.classList.remove('mini');
+    if (!YT.player) { $('#ytPick').hidden = false; renderYtList(YT.results); }
+    if (el.hidden) { el.classList.add('off'); el.hidden = false; void el.offsetWidth; }
+    // 抽屜和按鈕跟面板一起滑上去（ytsplit）；地圖等面板停好才縮（ytmap），縮的瞬間被面板蓋住
+    if (split) { document.body.classList.add('ytsplit'); updSplit(); }
+    el.classList.remove('off');
+    YT.animT = setTimeout(() => { if (YT.open && split) { document.body.classList.add('ytmap'); updSplit(true); } }, 500);
   }
+  // 關閉：地圖先在面板後面長回來，面板再滑出去
   function closeYtPanel() {
+    const el = $('#yt');
     try { YT.player?.stopVideo(); } catch { /* 忽略 */ }
     YT.open = false;
-    $('#yt').hidden = true; $('#ytFab').hidden = false;
-    applyYtMode();
+    clearTimeout(YT.animT);
+    document.body.classList.remove('ytsplit', 'ytmap'); updSplit(true);
+    el.classList.add('off');
+    YT.animT = setTimeout(() => {
+      if (YT.open) return;
+      el.hidden = true; el.classList.remove('off');
+      document.body.classList.remove('ytdock');
+      $('#ytFab').hidden = false;
+    }, 520);
   }
   function layoutYT() {
     const tall = document.body.classList.contains('sheet-tall');
@@ -4420,7 +4549,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     if (queue) { YT.queue = queue; YT.qi = idx ?? queue.indexOf(item); }
     else if (!YT.queue.includes(item)) { YT.queue = [item]; YT.qi = 0; }
     YT.cur = item;
-    if (ytMode() === 'split' && !YT.open) openYtPanel();
+    if (!YT.open && ytMode() !== 'pip') openYtPanel();
     updYtNav();
     $('#ybox').hidden = false; $('#ytPick').hidden = true; $('#ytPlay').hidden = false;
     $('#yt').classList.remove('mini');
@@ -4448,7 +4577,8 @@ body { font-size: 17px; letter-spacing: -.01em; }
         });
       }
       if (YT.player) YT.player.__list = !!item.listId;
-      $('#ytTitle').textContent = item.title || 'YouTube';
+      const tt = $('#ytTitle'); tt.style.opacity = 0;
+      setTimeout(() => { tt.textContent = item.title || 'YouTube'; tt.style.opacity = 1; }, 160);
       setTimeout(updSplit, 50);
     } catch (e) { toast(e.message || String(e)); }
   }
@@ -4500,8 +4630,26 @@ body { font-size: 17px; letter-spacing: -.01em; }
       return !!j.tdx;
     } catch (e) { say(`連不上中繼站：${e.message || e}`, 'err'); if (!show) toast('連不上中繼站，交通資料可能載不到'); return false; }
   }
-  function openDialog(id) { const d = document.getElementById(id); d.hidden = false; }
-  function closeDialog(id) { document.getElementById(id).hidden = true; }
+  function openDialog(id) {
+    const d = document.getElementById(id);
+    clearTimeout(d._t); d.hidden = false;
+    void d.offsetWidth;            // 先畫出「關著」的樣子，再加 open 才會有滑上來的動畫
+    d.classList.add('open');
+  }
+  function closeDialog(id) {
+    const d = document.getElementById(id);
+    if (d.hidden) return;
+    d.classList.remove('open');
+    clearTimeout(d._t); d._t = setTimeout(() => { d.hidden = true; }, 420);
+  }
+  // 圖層選單：從按鈕那裡長出來、縮回去
+  const popOpen = () => $('#layerPop').classList.contains('open');
+  function showPop(on) {
+    const el = $('#layerPop');
+    clearTimeout(el._t);
+    if (on) { el.hidden = false; void el.offsetWidth; el.classList.add('open'); }
+    else if (!el.hidden) { el.classList.remove('open'); el._t = setTimeout(() => { el.hidden = true; }, 320); }
+  }
   function openSettings(msg) {
     const k = tdx.getKey();
     $('#kId').value = k.id; $('#kSecret').value = k.secret;
@@ -4584,8 +4732,8 @@ body { font-size: 17px; letter-spacing: -.01em; }
   }
   let toastT;
   function toast(msg) {
-    const t = $('#toast'); t.textContent = msg; t.hidden = false;
-    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3600);
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('show'); }, 3600);
   }
   function showWelcome(v) { $('#welcome').hidden = !v; if (!v) LS.setItem('welcomed', '1'); }
 
@@ -4599,6 +4747,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     else turn.style.width = '';
     const y = turn.hidden ? top : turn.getBoundingClientRect().bottom + 10;
     $('#ctrl').style.top = y + 'px';
+    $('#bNorth').style.top = (y + $('#ctrl').offsetHeight + 12) + 'px';
     $('#layerPop').style.top = y + 'px';
   }
 
@@ -4613,6 +4762,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
       const act = a.dataset.act;
       if (act === 'relocate') { S.locFail = ''; showHome(); return firstLocate(); }
       if (act === 'savePlace') return openSaveBox(S.saveDest);
+      if (act === 'home') S.navDir = 'back';
       if (act === 'home' && S.backFn) { const f = S.backFn; S.backFn = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); if (S.nav) S.nav = null; } return f(); }
       if (act === 'home') { clearBus(); clearSearchPins(); S.place = null; S.lastG = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); destMarker?.remove(); S.nav = null; } showHome(); }
       if (act === 'settings') openSettings();
@@ -4633,7 +4783,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#q').addEventListener('focus', () => { if (!isWide() && sheet().dataset.d === 'peek') setDetent('half'); });
     document.addEventListener('focusout', (e) => { if (e.target.matches?.('input,textarea,select')) setTimeout(() => window.scrollTo(0, 0), 60); });
 
-    $('#bLayers').addEventListener('click', () => { renderLayerPop(); $('#layerPop').hidden = !$('#layerPop').hidden; layoutCtrl(); });
+    $('#bLayers').addEventListener('click', () => { renderLayerPop(); layoutCtrl(); showPop(!popOpen()); });
     $('#layerPop').addEventListener('click', (e) => {
       const r = e.target.closest('.lrow'); if (!r) return;
       if (r.dataset.k) toggleLayer(r.dataset.k);
@@ -4650,7 +4800,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#bLoc').addEventListener('click', locate);
     $('#bNorth').addEventListener('click', resetNorth);
     $('#bSet').addEventListener('click', () => openSettings());
-    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; if (S.nav.last) onPosition(S.nav.last, null, null); } });
+    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; applyGestureMode(); if (S.nav.last) onPosition(S.nav.last, null, null); } });
 
     // 設定
     $('#kSave').addEventListener('click', saveKey);
@@ -4696,7 +4846,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#reWelcome').addEventListener('click', () => { closeDialog('setDlg'); showWelcome(true); });
     document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeDialog(b.dataset.close)));
     document.querySelectorAll('.dlg').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.hidden = true; }));
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.querySelectorAll('.dlg').forEach((d) => { d.hidden = true; }); $('#layerPop').hidden = true; } });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.querySelectorAll('.dlg').forEach((d) => closeDialog(d.id)); showPop(false); } });
 
     // 歡迎頁
     $('#wKey').addEventListener('click', () => { showWelcome(false); if (!tdx.ready()) openSettings(); });
@@ -4714,8 +4864,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#pipHide').addEventListener('click', () => { LS.setItem('pip.hide', '1'); applyYtMode(); });
     $('#ytFab').addEventListener('click', () => {
       if (ytMode() === 'pip') return openYouTubeApp();
-      if (ytMode() === 'split') return openYtPanel();
-      $('#yt').hidden = false; $('#ytFab').hidden = true; $('#yt').classList.remove('mini'); renderYtList();
+      openYtPanel();
     });
     $('#ytForm').addEventListener('submit', (e) => { e.preventDefault(); ytSubmit(); });
     $('#ytSwap').addEventListener('click', () => { $('#ytPick').hidden = !$('#ytPick').hidden; $('#yt').classList.remove('mini'); renderYtList(YT.results); updSplit(); });
@@ -4735,7 +4884,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     new ResizeObserver(() => updSplit()).observe($('#yt'));
     window.addEventListener('resize', () => updSplit());
     $('#ytClose').addEventListener('click', () => {
-      if (ytMode() === 'split') return closeYtPanel(); try { YT.player?.stopVideo(); } catch { /* 忽略 */ } $('#yt').hidden = true; $('#ytFab').hidden = false; });
+      closeYtPanel(); });
     $('#ytPlay').addEventListener('click', () => { const p = YT.player; if (!p?.getPlayerState) return; p.getPlayerState() === 1 ? p.pauseVideo() : p.playVideo(); });
 
     darkMQ.addEventListener?.('change', () => applyBase());

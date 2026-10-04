@@ -199,7 +199,7 @@ svg { display: block; }
   position: fixed; z-index: 9; left: 8px; right: 8px; bottom: 8px; border-radius: var(--r-lg);
   display: flex; flex-direction: column; max-height: calc(100% - env(safe-area-inset-top, 0px) - 70px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  transition: height .38s cubic-bezier(.2, .9, .25, 1), width .3s, right .3s;
+  transition: height .38s cubic-bezier(.2, .9, .25, 1), width .3s, right .3s, left .45s cubic-bezier(.32, .72, 0, 1), bottom .5s cubic-bezier(.32, .72, 0, 1);
 }
 #sheet.dragging { transition: none; }
 #sheet[data-d="peek"] #sheetBody { visibility: hidden; }
@@ -409,19 +409,19 @@ body.navigating #hudDate { display: none; }
 :root { --yth: 0px; --ytw: 0px; }
 #ytPaste { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-bottom: 8px; height: 38px; border-radius: 12px; background: var(--fill); color: var(--red); font-weight: 600; font-size: 14px; }
 #ytPaste svg { width: 17px; height: 17px; }
-body.ytsplit #ytFab, body.ytsplit #pipZone { display: none !important; }
-body.ytsplit #ytSize { display: none; }
-body.ytsplit #map { right: var(--ytw); bottom: var(--yth); height: auto; }
+body.ytdock #ytFab, body.ytdock #pipZone { display: none !important; }
+body.ytdock #ytSize { display: none; }
+body.ytmap #map { right: var(--ytw); bottom: var(--yth); height: auto; }
 body.ytsplit #attr { bottom: calc(var(--yth) + 2px); }
 body.ytsplit #follow, body.ytsplit #toast { bottom: calc(var(--yth) + var(--sheet-h) + 18px); }
 @media (max-width: 899px) and (orientation: portrait) {
-  body.ytsplit #yt, body.ytsplit #yt[data-size] { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 62%; border-radius: 22px 22px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; display: flex; flex-direction: column; }
-  body.ytsplit #yt #ytPick { overflow-y: auto; min-height: 0; }
+  body.ytdock #yt, body.ytdock #yt[data-size] { left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 62%; border-radius: 22px 22px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; display: flex; flex-direction: column; }
+  body.ytdock #yt #ytPick { overflow-y: auto; min-height: 0; }
   body.ytsplit #ytList { max-height: none; }
   body.ytsplit #sheet { bottom: calc(var(--yth) + 8px); padding-bottom: 0; max-height: calc(100% - var(--yth) - env(safe-area-inset-top, 0px) - 70px); }
 }
 @media (min-width: 900px), (orientation: landscape) {
-  body.ytsplit #yt, body.ytsplit #yt[data-size] { top: 0; right: 0; bottom: 0; left: auto; width: var(--ytw); border-radius: 0; padding-top: env(safe-area-inset-top, 0px); overflow-y: auto; z-index: 10; }
+  body.ytdock #yt, body.ytdock #yt[data-size] { top: 0; right: 0; bottom: 0; left: auto; width: min(42vw, 480px); border-radius: 0; padding-top: env(safe-area-inset-top, 0px); overflow-y: auto; z-index: 10; }
   body.ytsplit #ctrl, body.ytsplit #turn { right: calc(var(--ytw) + 12px); }
   body.ytsplit #layerPop { right: calc(var(--ytw) + 66px); }
   body.ytsplit #ytList { max-height: none; }
@@ -637,6 +637,72 @@ body { font-size: 17px; letter-spacing: -.01em; }
 .back { width: 36px; height: 36px; border-radius: 50%; background: var(--cell); color: var(--ink); display: grid; place-items: center; margin: 0 0 8px; box-shadow: var(--hl); }
 .back svg { width: 18px; height: 18px; }
 .back:active { background: var(--cell-press); }
+/* ======================================================
+   動畫層 —— 第一原則：有質感（Apple 的彈簧曲線）；第二原則：好用（不擋手、不亂跳）
+   ====================================================== */
+:root { --spring: cubic-bezier(.32, .72, 0, 1); }
+/* 按下去縮一點、放開彈回 */
+.btn, #ctrl button, #bNorth, .mode, #ytFab, .rtabs button, .chip, .back, .ythead button, #pipOpen, #ytPaste, .seg button, .card-h button, .cell.act {
+  transition: transform .25s var(--spring), background-color .2s, color .2s, opacity .2s; }
+.btn:active, #ctrl button:active, #bNorth:active, .mode:active, #ytFab:active, .rtabs button:active, .chip:active, .back:active,
+.ythead button:active, #pipOpen:active, #ytPaste:active, .seg button:active { transform: scale(.9); transition-duration: .08s; }
+.item { transition: background-color .15s, transform .25s var(--spring); }
+.item:active { transform: scale(.985); }
+/* 抽屜內容換頁：往前從右邊滑進來、返回從左邊滑進來 */
+@keyframes inFwd { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes inBack { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: none; } }
+@keyframes inUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+#sheetBody.in-fwd > * { animation: inFwd .42s var(--spring) both; }
+#sheetBody.in-back > * { animation: inBack .42s var(--spring) both; }
+#sheetBody.in-up > * { animation: inUp .4s var(--spring) both; }
+#sheetBody[class*="in-"] > :nth-child(2) { animation-delay: .03s; }
+#sheetBody[class*="in-"] > :nth-child(3) { animation-delay: .06s; }
+#sheetBody[class*="in-"] > :nth-child(n+4) { animation-delay: .09s; }
+/* 清單一筆一筆浮出來（搜尋結果、轉乘方案） */
+.stagger > * { animation: inUp .42s var(--spring) both; }
+.stagger > :nth-child(2) { animation-delay: .035s; } .stagger > :nth-child(3) { animation-delay: .07s; }
+.stagger > :nth-child(4) { animation-delay: .105s; } .stagger > :nth-child(5) { animation-delay: .14s; }
+.stagger > :nth-child(n+6) { animation-delay: .17s; }
+/* 提示訊息：浮上來、淡出 */
+#toast { display: block; opacity: 0; transform: translate(-50%, 16px) scale(.94); pointer-events: none; transition: opacity .25s, transform .45s var(--spring); }
+#toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* 圖層選單：從按鈕那裡長出來 */
+#layerPop { transform-origin: top right; transition: opacity .22s, transform .42s var(--spring); }
+#layerPop:not(.open) { opacity: 0; transform: scale(.82); pointer-events: none; }
+/* 設定、紀錄：手機從下面滑上來；電腦放大淡入 */
+.dlg { transition: background-color .35s; }
+.dlg:not(.open) { background-color: rgba(0, 0, 0, 0); }
+.dlg > .card { transition: transform .5s var(--spring), opacity .3s; }
+.dlg:not(.open) > .card { transform: translateY(105%); }
+@media (min-width: 700px) { .dlg:not(.open) > .card { transform: scale(.94); opacity: 0; } }
+/* 導航用的卡片：出現時彈出來 */
+@keyframes popIn { from { opacity: 0; transform: translateY(-12px) scale(.95); } to { opacity: 1; transform: none; } }
+@keyframes popInC { from { opacity: 0; transform: translate(-50%, 12px) scale(.95); } to { opacity: 1; transform: translate(-50%, 0); } }
+#turn:not([hidden]), #hudSpeed:not([hidden]), #hudCam:not([hidden]) { animation: popIn .5s var(--spring) both; }
+#follow:not([hidden]) { animation: popInC .5s var(--spring) both; }
+@media (min-width: 900px) { #follow:not([hidden]) { animation: popIn .5s var(--spring) both; } }
+/* 指南針：獨立圓鈕在按鈕組下面，淡入淡出，不會把設定擠下去 */
+#bNorth { position: fixed; z-index: 5; right: 14px; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  transition: opacity .3s, transform .45s var(--spring), top .35s var(--spring), right .5s var(--spring); }
+#bNorth:not(.show) { opacity: 0; transform: scale(.5); pointer-events: none; }
+#bNorth svg { transition: none; }
+body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
+#ctrl { transition: top .35s var(--spring), right .5s var(--spring); }
+#turn { transition: right .5s var(--spring); }
+/* YouTube：滑進來、滑出去；縮小時影片收起來 */
+@keyframes fabIn { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+#ytFab:not([hidden]) { animation: fabIn .5s var(--spring) both; }
+#yt { transition: transform .55s var(--spring), opacity .35s, width .45s var(--spring); }
+#yt.off { opacity: 0; transform: translateY(18px) scale(.94); }
+@media (max-width: 899px) and (orientation: portrait) { body.ytdock #yt.off { opacity: 1; transform: translateY(105%); } }
+@media (min-width: 900px), (orientation: landscape) { body.ytdock #yt.off { opacity: 1; transform: translateX(105%); } }
+.ybox { max-height: 70vh; overflow: hidden; transition: max-height .5s var(--spring), opacity .35s; }
+#yt.mini .ybox { position: relative; width: auto; height: auto; max-height: 0; opacity: 0; pointer-events: none; }
+#yt.mini .ybox::before { content: none; }
+#ytTitle { transition: opacity .25s; }
+/* 開導航時底下的抽屜、按鈕也滑順 */
+#hud { transition: min-width .3s var(--spring); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
@@ -660,12 +726,12 @@ body { font-size: 17px; letter-spacing: -.01em; }
 </div>
 
 <div id="ctrl" class="glass">
+  <button id="bSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <button id="bLayers" aria-label="圖層"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="m2.5 12.5 9.5 5 9.5-5"/><path d="m2.5 16.5 9.5 5 9.5-5" opacity=".55"/></svg></button>
   <button id="b3d" aria-label="3D 視角"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><path d="M12 12 20 7.4M12 12v9.2M12 12 4 7.4"/></svg></button>
   <button id="bLoc" aria-label="我的位置" data-mode="off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20.6 3.4 3.7 10.3c-.8.3-.7 1.4.1 1.6l6.8 1.6 1.6 6.8c.2.8 1.3.9 1.6.1L20.6 3.4z"/></svg></button>
-  <button id="bNorth" aria-label="指南針（點一下回到北朝上）" hidden><svg viewBox="0 0 24 24"><path d="M12 2.5 15.2 12H8.8z" fill="#ff3b30"/><path d="M12 21.5 8.8 12h6.4z" fill="currentColor" opacity=".5"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg></button>
-  <button id="bSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
 </div>
+  <button id="bNorth" class="glass" aria-label="指南針（點一下回到北朝上）"><svg viewBox="0 0 24 24"><path d="M12 2.5 15.2 12H8.8z" fill="#ff3b30"/><path d="M12 21.5 8.8 12h6.4z" fill="currentColor" opacity=".5"/><circle cx="12" cy="12" r="1.3" fill="#fff"/></svg></button>
 
 <div id="layerPop" class="glass" hidden></div>
 <div id="sv" hidden><div id="svPano"></div><button id="svClose" class="glass">完成</button></div>
@@ -796,7 +862,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
   </div>
 </div>
 
-<div id="toast" class="glass" hidden role="status"></div>
+<div id="toast" class="glass" role="status" aria-live="polite"></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>

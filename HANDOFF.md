@@ -199,3 +199,11 @@ e2e.py         Playwright 端到端測試（地圖程式庫用替身、TDX 用�
 - 限制：iPhone 鎖螢幕／切 App 時網頁內影片會暫停；要背景播放用「YouTube App 子母畫面」模式。
 - 國道測速：使用者從 data.gov.tw/dataset/13940 下載的檔放 data/manual/，每日流程自動合併。
 - 測試：e2e_yt.py。
+
+## 18. 動畫層與手勢（2026/10/4 晚）— 使用者定的兩大原則
+- **第一原則：有質感的動畫（Apple 彈簧曲線 cubic-bezier(.32,.72,0,1)）；第二原則：好用。** 之後所有改動都要照這兩條。
+- template.html 最後的「動畫層」：按鈕按下縮放、抽屜換頁左右滑（S.navDir＝'back' 時從左）、清單逐筆浮出（.stagger）、提示浮出（#toast.show）、圖層選單從按鈕長出（showPop）、設定從下面滑上（openDialog/closeDialog 加 .open）、導航卡片彈出、YouTube 面板滑進滑出（.off）、縮小時影片收起。prefers-reduced-motion 全關。
+- YouTube 分割：ytdock（面板定位）→ ytsplit（抽屜、按鈕跟面板一起滑）→ 面板停好後 ytmap（地圖才縮，被面板蓋住看不到跳動）。關閉反過來。
+- 指南針拿出按鈕組，獨立圓鈕在下面，淡入淡出；出現 >4°、消失 <1°（不會閃）。按鈕組順序改成 設定／圖層／3D／定位（設定離定位最遠，不誤觸）。
+- 跟隨時縮放被打斷的原因：每格 jumpTo 會呼叫 map.stop()，把正在進行的手勢中止。修法：手指在地圖上（touches／滑鼠按著／滾輪 450ms 內）不 jumpTo，放開後 easeTo 回到你身上；跟隨中兩指縮放以畫面中心為準（touchZoomRotate/scrollZoom around:'center'），方向跟隨時關掉手指旋轉；兩指手勢不取消跟隨。
+- 國道固定式測速：使用者提供 115/07/20 版 zip（176 處，有方向），放在 data/manual/。
