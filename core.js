@@ -527,7 +527,7 @@
     const s = String(t || '').replace(/\s/g, '');
     let m = s.match(/^deg:(\d+)/);
     if (m) return { deg: +m[1] % 360, both: false };
-    if (/雙向|雙邊|兩向/.test(s)) return { deg: null, both: true };
+    if (/雙向|雙邊|兩向|^南北向$|^東西向$/.test(s)) return { deg: null, both: true };
     m = s.match(/([東南西北])[向往至到]([東南西北])/);
     if (m && m[1] !== m[2]) return { deg: CARD[m[2]], both: false };
     m = s.match(/([東南西北])(上|下|行|向|側)/);

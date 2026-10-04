@@ -4,7 +4,7 @@ on:
     - cron: '17 19 * * *'   # 每天台灣時間 03:17
   workflow_dispatch:
   push:
-    paths: ['scripts/speedcam.py', '.github/workflows/speedcam.yml']
+    paths: ['scripts/speedcam.py', '.github/workflows/speedcam.yml', 'data/manual/**']
 permissions:
   contents: write
 jobs:
