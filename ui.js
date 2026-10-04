@@ -2068,7 +2068,16 @@
       if (b.dataset.m === 'metro' && S.county) searchMetro('');   // 點「捷運」直接列出附近的站
       else $('#q').focus();
     });
-    $('#qForm').addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
+    // 注音／拼音輸入時，按「確認」選字不能當成送出：選字中或剛選完 300ms 內的送出一律忽略，要再按一次「搜尋」
+    let composing = false, compEnd = 0;
+    $('#q').addEventListener('compositionstart', () => { composing = true; });
+    $('#q').addEventListener('compositionend', () => { composing = false; compEnd = Date.now(); });
+    $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) e.preventDefault(); });
+    $('#qForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (composing || Date.now() - compEnd < 300) return;
+      runSearch();
+    });
     $('#q').addEventListener('focus', () => { if (!isWide() && sheet().dataset.d === 'peek') setDetent('half'); });
 
     $('#bLayers').addEventListener('click', () => { renderLayerPop(); $('#layerPop').hidden = !$('#layerPop').hidden; layoutCtrl(); });
