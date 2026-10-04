@@ -702,6 +702,7 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
 #ytTitle { transition: opacity .25s; }
 /* 開導航時底下的抽屜、按鈕也滑順 */
 #hud { transition: min-width .3s var(--spring); }
+.t2 .kind { display: inline-block; white-space: nowrap; margin-right: 6px; padding: 1px 7px; border-radius: 6px; background: var(--fill); color: var(--ink2); font-size: 11.5px; font-weight: 600; line-height: 1.5; vertical-align: 1px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; } }
 </style>
 </head>
@@ -2605,13 +2606,48 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
     if (code && (!S.county || S.county.code !== code)) selectCounty(code, { fly: false });
   }
 
+  // ---------- 地圖上的店家、地標（開放地圖向量圖的 POI） ----------
+  const VEC_POI = ['v-poi_r1', 'v-poi_r7', 'v-poi_r20', 'v-poi_transit'];
+  const POI_ZH = {
+    convenience: '便利商店', supermarket: '超市', grocery: '雜貨店', shop: '商店', clothing_store: '服飾店', clothes: '服飾店', shoes: '鞋店', mall: '購物中心', department_store: '百貨公司',
+    restaurant: '餐廳', fast_food: '速食', cafe: '咖啡廳', bar: '酒吧', pub: '酒吧', ice_cream: '冰品', bakery: '麵包店', beverages: '飲料店',
+    bank: '銀行', atm: '提款機', pharmacy: '藥局', chemist: '藥妝店', hospital: '醫院', clinic: '診所', doctors: '診所', dentist: '牙醫',
+    school: '學校', college: '大專院校', university: '大學', kindergarten: '幼兒園', library: '圖書館', post: '郵局', post_office: '郵局',
+    police: '警察局', fire_station: '消防局', town_hall: '公所', fuel: '加油站', charging_station: '充電站', parking: '停車場', bicycle_parking: '自行車停車',
+    bus: '公車站', rail: '車站', railway: '車站', airport: '機場', lodging: '住宿', hotel: '飯店', park: '公園', playground: '遊樂場',
+    place_of_worship: '宗教場所', cinema: '電影院', theatre: '劇場', museum: '博物館', toilets: '廁所', car: '汽車', car_repair: '汽車維修', motorcycle: '機車行',
+    hairdresser: '美髮', beauty: '美容', laundry: '洗衣店', hardware: '五金行', doityourself: '五金百貨', mobile_phone: '手機行', electronics: '3C 家電', books: '書店',
+    stationery: '文具店', gift: '禮品店', optician: '眼鏡行', florist: '花店', furniture: '家具店', pet: '寵物店', veterinary: '動物醫院', sports: '運動用品', massage: '按摩',
+    community_centre: '活動中心', social_facility: '社福機構', attraction: '景點', information: '旅遊資訊',
+  };
+  function openVecPoi(f, e) {
+    const pr = f.properties || {};
+    const name = pr['name:zh-Hant'] || pr.name || pr['name:zh'] || pr.name_en;
+    if (!name) return;
+    const p = f.geometry?.type === 'Point' ? f.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat];
+    openPlace({ name, p, addr: '', type: POI_ZH[pr.subclass] || POI_ZH[pr.class] || '', osm: true });
+  }
+  // 開放街圖的詳細資料：營業時間、電話、網站（有人填才有）；地址用反查
+  const OSM_DAY = { Mo: '一', Tu: '二', We: '三', Th: '四', Fr: '五', Sa: '六', Su: '日', PH: '國定假日' };
+  const osmHours = (h) => (h === '24/7' ? '24 小時營業' : String(h).replace(/\b(Mo|Tu|We|Th|Fr|Sa|Su|PH)\b/g, (m) => OSM_DAY[m]).replace(/off/g, '休息').replace(/;\s*/g, '；'));
+  async function enrichOSM(d) {
+    const [lng, lat] = d.p;
+    const jobs = [];
+    if (!d.addr) jobs.push(getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=zh-TW&lat=${lat}&lon=${lng}`, '地址').then((j) => { d.addr = C.fmtAddr(j.address || {}) || d.addr; }).catch(() => {}));
+    const nm = d.name.replace(/["\\]/g, '');
+    const q = `[out:json][timeout:8];nwr(around:60,${lat},${lng})["name"="${nm}"];out tags 1;`;
+    jobs.push(fetch('https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(q)).then((r) => { logExt('開放街圖詳細資料', r.status); return r.ok ? r.json() : null; })
+      .then((j) => { d.osmTags = j?.elements?.[0]?.tags || {}; }).catch(() => { d.osmTags = {}; }));
+    await Promise.all(jobs);
+    d.full = true;
+  }
   // ---------- 地圖點擊 ----------
   function bindMapEvents() {
     // 地圖拖到別的縣市（拉近到市區程度時）自動換縣市資料
     map.on('moveend', () => { if (!S.nav?.active && map.getZoom() >= 10.5 && S.track === 'off') autoCounty(map.getCenter().toArray()); });
     map.on('click', (e) => {
       showPop(false);
-      const order = ['search-pt', 'bus-st', 'bike-pt', 'bike-cluster', 'speedcam', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines'];
+      const order = ['search-pt', 'bus-st', 'bike-pt', 'bike-cluster', 'speedcam', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines', ...VEC_POI];
       const hits = map.queryRenderedFeatures(e.point, { layers: order.filter((l) => map.getLayer(l)) });
       if (hits.length) {
         hits.sort((a, b) => order.indexOf(a.layer.id) - order.indexOf(b.layer.id));
@@ -2621,12 +2657,13 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
           return;
         }
         if (f.layer.id === 'metro-lines') return openLine(f.properties.op, f.properties.line);   // 點捷運線＝選這條線
+        if (f.layer.id.startsWith('v-poi')) return openVecPoi(f, e);
         if (f.layer.id === 'search-pt') { const r = S.searchRows?.[f.properties.i]; if (r) openPlace(r); return; }
         if (f.layer.id === 'speedcam') { const q = f.properties; toast(`測速照相${q.limit ? `・限速 ${q.limit}` : ''}${q.dirTxt ? '・' + q.dirTxt : ''}${q.addr ? '・' + q.addr : ''}${q.src === 'o' ? '・資料：開放街圖（非官方）' : ''}`); return; }
         return openFeature(f.layer.id, f.properties, f.geometry.coordinates);
       }
     });
-    ['metro-st', 'tra-st', 'thsr-st', 'bike-pt', 'bike-cluster', 'bus-st', 'metro-lines'].forEach((l) => {
+    ['metro-st', 'tra-st', 'thsr-st', 'bike-pt', 'bike-cluster', 'bus-st', 'metro-lines', 'speedcam', 'search-pt', ...VEC_POI].forEach((l) => {
       map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
     });
@@ -2854,16 +2891,27 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
   // 抽屜（手機三段：收合／一半／全開；電腦為左側欄）
   // ======================================================
   const sheet = () => $('#sheet');
+  // iPhone 的瀏海、底部橫條高度：直接量（Safari 有時候 getComputedStyle 回傳沒算好的 env()，會變成 0）
+  const safeProbe = (side) => {
+    const id = 'safe-' + side;
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div'); el.id = id;
+      el.style.cssText = `position:fixed;left:0;top:0;width:0;visibility:hidden;pointer-events:none;height:env(safe-area-inset-${side},0px)`;
+      document.body.appendChild(el);
+    }
+    return el.offsetHeight || 0;
+  };
   function detentPx(d) {
     const vh = window.innerHeight - (parseFloat(document.documentElement.style.getPropertyValue('--yth')) || 0);
     if (d === 'peek' && document.body.classList.contains('navigating')) return navBarH();
-    if (d === 'peek') return $('#srow').offsetHeight + 18 + 6 + (parseFloat(getComputedStyle(sheet()).paddingBottom) || 0);
+    if (d === 'peek') return $('#srow').offsetHeight + 18 + 6 + safeProbe('bottom');
     if (d === 'full') return Math.round(vh * 0.86);
     return Math.round(vh * 0.46);
   }
   function navBarH() {
     const nb = $('#sheetBody .navbar');
-    return (nb ? nb.offsetHeight : 48) + 18 + 16 + (parseFloat(getComputedStyle(sheet()).paddingBottom) || 0);
+    return (nb ? nb.offsetHeight : 48) + 18 + 16 + safeProbe('bottom');
   }
   function sheetHeight() { return isWide() ? 0 : sheet().getBoundingClientRect().height; }
   function setDetent(d) {
@@ -3472,20 +3520,47 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
         if (rows.length) break;
       }
     }
+    // 鐵路／捷運「線」本身不是去得了的地點（站才是）；同名的只留最近一筆
+    rows = rows.filter((r) => !((r.category === 'railway' || r.class === 'railway' || r.type === 'route') && !/station|halt|stop|platform|entrance/.test(r.type)));
     rows.forEach((r) => { r._d = C.dist(ref, [+r.lon, +r.lat]); });
     rows.sort((a, b) => a._d - b._d);
-    return { rows, refLbl };
+    const seen = new Map();
+    rows = rows.filter((r) => {
+      const k = (r.name || r.display_name || '').trim();
+      if (!k) return true;
+      const prev = seen.get(k);
+      if (prev && C.dist([+prev.lon, +prev.lat], [+r.lon, +r.lat]) < 3000) return false;
+      if (!prev) seen.set(k, r);
+      return true;
+    });
+    return { rows: rows.slice(0, 25), refLbl };
   }
   async function runSearch() {
     const q = $('#q').value.trim();
     if (!q) return;
     $('#q').blur();
     if (isBusQuery(q) && tdx.ready() && S.county) return searchBus(q.replace(/(公車|路)$/, '').replace(/\s+/g, ''), S.busScope || 'City');
+    // 打的是「交通種類」不是地點：直接列附近的站（不然開放地圖會回一堆同名的捷運路線段）
+    const qq = q.replace(/\s+/g, '');
+    const CAT = [
+      [/^(捷運|捷運站|地鐵|MRT|metro|輕軌)$/i, () => openMode('metro')],
+      [/^(台鐵|臺鐵|火車|火車站|車站|鐵路)$/, () => openMode('tra')],
+      [/^(高鐵|高鐵站)$/, () => openMode('thsr')],
+      [/^(youbike|ubike|微笑單車|公共自行車)$/i, () => openMode('bike')],
+      [/^(公車|公車站|站牌|公車站牌)$/, () => openMode('bus')],
+    ];
+    const cat = CAT.find(([re]) => re.test(qq));
+    if (cat) return cat[1]();
+    // 「捷運○○站」「○○捷運站」→ 查捷運站名
+    const mm = qq.match(/^捷運(.+?)站?$/) || qq.match(/^(.+?)捷運站$/);
+    if (mm && S.county?.metro.length) return searchMetro(mm[1]);
     if (G) return runGoogleSearch(q);
     setBody(`${backBtn}<div class="ph"><div class="tag">地點</div><h2>${esc(q)}</h2></div><div id="rBody">${loading}</div>`, 'search');
     try {
-      const { rows, refLbl } = await searchPlaces(q);
-      if (!rows.length) { $('#rBody').innerHTML = '<p class="muted">找不到這個地點，換個寫法試試（例如加上縣市或路名）。</p>'; return; }
+      const [pl, stops] = await Promise.all([searchPlaces(q), searchStops(q).catch(() => [])]);
+      let { rows } = pl; const { refLbl } = pl;
+      S.lastStops = stops;
+      if (!$('#rBody')) return;
       // 地址寫成台灣慣用格式：縣市＋區＋路（＋門牌）。有查門牌但資料只到路段時，明講
       const askedNo = /\d+\s*號/.test(q);
       const KIND = { house: '門牌', building: '建築', road: '道路', primary: '道路', secondary: '道路', tertiary: '道路', residential: '道路', unclassified: '道路', bus_stop: '公車站', station: '車站' };
@@ -3499,16 +3574,50 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
         return { nm, addr, kind: KIND[r.type] || (isRoad ? '道路' : ''), exact: !!a.house_number, isRoad, poi };
       };
       const exact = rows.some((r) => r.address?.house_number);
-      $('#rBody').innerHTML = `${askedNo && !exact ? '<p class="note">開放地圖資料沒有收錄這個門牌，下面先列出同一條路的位置（會定位到路段，不是門口）。</p>' : ''}
-        <div class="list">${rows.map((r, i) => {
+      // stops：上面和地點一起查的官方站牌
+      // 官方站牌已經列了，開放地圖裡的公車站就不重複
+      if (stops.length) rows = rows.filter((r) => !/bus_stop|platform/.test(r.type));
+      if (!rows.length && !stops.length) { $('#rBody').innerHTML = '<p class="muted">找不到這個地點，換個寫法試試（例如加上縣市或路名）。</p>'; return; }
+      const stopHtml = stops.length ? `<div class="sec"><h3>公車站牌</h3><div class="list stagger">${stops.map((g, i) => {
+        const rs = [...g.routes].sort((a, b) => a.length - b.length || a.localeCompare(b, 'zh-TW'));
+        return `<button class="item" data-s="${i}"><i class="dot d-bus"></i><span class="grow"><span class="t1">${esc(g.name)}</span><div class="t2">${rs.slice(0, 6).map(esc).join('、')}${rs.length > 6 ? ` 等 ${rs.length} 條` : ''}</div></span><span class="t2 num">${C.fmtDist(g.d)}</span><span class="muted">›</span></button>`;
+      }).join('')}</div></div>` : '';
+      const placeHtml = rows.length ? `<div class="sec">${stops.length ? '<h3>地點</h3>' : ''}<div class="list stagger">${rows.map((r, i) => {
           const L = label(r);
-          return `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(L.nm)}${L.kind ? ` <span class="kind">${L.kind}</span>` : ''}</span><div class="t2">${esc(L.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`;
-        }).join('')}</div><p class="fine">依離${refLbl}的距離，由近到遠・地點資料：OpenStreetMap Nominatim</p>`;
+          return `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(L.nm)}</span><div class="t2">${L.kind ? `<span class="kind">${L.kind}</span>` : ''}${esc(L.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`;
+        }).join('')}</div></div>` : '';
+      $('#rBody').innerHTML = `${askedNo && !exact ? '<p class="note">開放地圖資料沒有收錄這個門牌，下面先列出同一條路的位置（會定位到路段，不是門口）。</p>' : ''}
+        ${stopHtml}${placeHtml}
+        <p class="fine">依離${refLbl}的距離排序${stops.length ? '・站牌：交通部 TDX（官方，含即時到站）' : ''}${rows.length ? '・地點：OpenStreetMap 開放資料（台灣店家收錄不完整，設定 Google 金鑰後改用 Google）' : ''}</p>`;
+      $('#rBody').querySelectorAll('[data-s]').forEach((b) => b.addEventListener('click', () => openBusStop(stops[+b.dataset.s])));
       const places = rows.map((r) => { const L = label(r); return { name: L.poi ? L.nm : L.exact ? L.addr : L.nm, p: [+r.lon, +r.lat], addr: L.addr, type: L.kind }; });
       showSearchPins(places);
       S.searchBack = () => runSearch();
       $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(places[+b.dataset.i])));
     } catch (e) { $('#rBody').innerHTML = errBox(e); }
+  }
+  // 官方公車站牌名稱搜尋（交通部 TDX）：同名、30 公尺內合併成一個站牌
+  async function searchStops(q) {
+    if (!tdx.ready() || !S.county || q.length < 2) return [];
+    const key = q.replace(/'/g, "''").replace(/台/g, '臺');
+    const ref = refPoint();
+    const all = [];
+    for (const city of busCities()) {
+      for (const k of [...new Set([key, q.replace(/'/g, "''")])]) {
+        const rows = await tdx.get(`/v2/Bus/Station/City/${city}`, { $filter: `contains(StationName/Zh_tw,'${k}')`, $select: 'StationUID,StationName,StationPosition,Stops', $top: 60 }, 600).catch(() => []);
+        rows.forEach((r) => all.push({ city, r }));
+      }
+    }
+    const groups = [];
+    all.forEach(({ city, r }) => {
+      const p = C.pos(r.StationPosition); if (!p) return;
+      const name = C.zh(r.StationName);
+      let g = groups.find((x) => x.name === name && C.dist(x.p, p) < 30);
+      if (!g) { g = { name, p, d: C.dist(ref, p), stops: [], routes: new Set(), uids: new Set() }; groups.push(g); }
+      (r.Stops || []).forEach((st) => { if (g.uids.has(st.StopUID)) return; g.uids.add(st.StopUID); g.stops.push({ city, uid: st.StopUID, routeUID: st.RouteUID, route: C.zh(st.RouteName) }); g.routes.add(C.zh(st.RouteName)); });
+    });
+    groups.sort((a, b) => a.d - b.d);
+    return groups.slice(0, 8);
   }
   async function runGoogleSearch(q) {
     setBody(`${backBtn}<div class="ph"><div class="tag">搜尋</div><h2>${esc(q)}</h2></div><div id="rBody">${loading}</div>`, 'search');
@@ -3523,7 +3632,7 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
       const pts = rows.map((r) => r.p);
       const bb = bboxOf({ coordinates: pts });
       if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 700, maxZoom: 16 });
-      $('#rBody').innerHTML = `<div class="list stagger">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
+      $('#rBody').innerHTML = `<div class="list stagger">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}</span><div class="t2">${r.type ? `<span class="kind">${esc(r.type)}</span>` : ''}${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
       $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(rows[+b.dataset.i])));
     } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗：' + gHint(e, 'Places API (New)'))); }
   }
@@ -3712,12 +3821,13 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
       const g = d.full ? d.g : null;
       const meta = [];
       if (g?.rating) meta.push(`<span class="star">${g.rating.toFixed(1)} ★</span><span>(${(g.userRatingCount || 0).toLocaleString()})</span>`);
-      if (d.type) meta.push(`<span>${esc(d.type)}</span>`);
       if (d.openNow != null) meta.push(d.openNow ? '<span class="open">營業中</span>' : '<span class="shut">休息中</span>');
       else if (g?.businessStatus === 'CLOSED_TEMPORARILY') meta.push('<span class="shut">暫停營業</span>');
       else if (g?.businessStatus === 'CLOSED_PERMANENTLY') meta.push('<span class="shut">永久歇業</span>');
       if (d.p && S.me) meta.push(`<span>${C.fmtDist(C.dist(S.me, d.p))}</span>`);
       const wk = g?.regularOpeningHours?.weekdayDescriptions || [];
+      const ot = d.osmTags || {};
+      const oPhone = ot.phone || ot['contact:phone'], oWeb = ot.website || ot['contact:website'], oHours = ot.opening_hours;
       const today = wk[(new Date().getDay() + 6) % 7];
       let photo = '';
       try { if (g?.photos?.length) photo = `<img class="pphoto" alt="" loading="lazy" src="${esc(g.photos[0].getURI({ maxHeight: 400 }))}">`; } catch { /* 沒照片 */ }
@@ -3725,7 +3835,13 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
         ${meta.length ? `<div class="pmeta">${meta.join('<span>・</span>')}</div>` : ''}
         <div class="acts">${dest ? '<button class="btn go" id="pcRoute">路線</button>' : ''}${G && dest ? `<button class="btn" id="pcSv">${ICO_SV}街景</button>` : ''}${dest ? saveBtn : ''}</div></div>
         <div id="saveBox" hidden></div>${photo}
-        <div class="sec" id="pcMore">${d.full || !G || !d.g ? '' : loading}
+        <div class="sec" id="pcMore">${d.full ? '' : loading}
+          ${!g && (oHours || oPhone || oWeb) ? `<div class="list">
+            ${oHours ? `<div class="item"><span class="grow"><span class="t1">營業時間</span><div class="t2">${esc(osmHours(oHours))}</div></span></div>` : ''}
+            ${oPhone ? `<a class="item" href="tel:${esc(String(oPhone).split(';')[0].replace(/\s/g, ''))}"><span class="grow t1">${esc(String(oPhone).split(';')[0])}</span><span class="muted">撥打</span></a>` : ''}
+            ${oWeb ? `<a class="item" href="${esc(oWeb)}" target="_blank" rel="noopener"><span class="grow t1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(oWeb.replace(/^https?:\/\/(www\.)?/, ''))}</span><span class="muted">網站</span></a>` : ''}
+          </div>` : ''}
+          ${!g && d.full && !(oHours || oPhone || oWeb) && d.osm ? '<p class="fine">開放地圖沒有這家的營業時間、電話。設定 Google 金鑰後可以看評分、營業時間、照片。</p>' : ''}
           ${today || g?.nationalPhoneNumber || g?.websiteURI || g?.googleMapsURI ? `<div class="list">
             ${today ? `<details class="item" style="display:block"><summary class="t1" style="cursor:pointer">今天 ${esc(today.replace(/^[^:：]+[:：]\s*/, ''))}</summary><div class="t2" style="margin-top:6px;line-height:1.7">${wk.map(esc).join('<br>')}</div></details>` : ''}
             ${g?.nationalPhoneNumber ? `<a class="item" href="tel:${esc(g.nationalPhoneNumber.replace(/\s/g, ''))}"><span class="grow t1">${esc(g.nationalPhoneNumber)}</span><span class="muted">撥打</span></a>` : ''}
@@ -3738,6 +3854,9 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
     };
     draw();
     if (d.p) { setDestPin(d.p); map.easeTo({ center: d.p, zoom: Math.max(map.getZoom(), 16), padding: isWide() ? { left: 380 } : { bottom: sheetHeight() } }); }
+    if (!d.g && !d.full && d.p) {
+      enrichOSM(d).then(() => { if (S.place === d) draw(); });
+    }
     if (G && d.g && !d.full) {
       (async () => {
         try {
@@ -4739,7 +4858,9 @@ body.ytsplit #bNorth { right: calc(var(--ytw) + 14px); }
 
   // 右側按鈕組跟著轉彎卡往下移
   function layoutCtrl() {
-    const top = parseFloat(getComputedStyle($('#hud')).top) || 10;
+    // 按鈕組頂端對齊左上角的時間卡（用實際位置，不讀 CSS 值；之前 iPhone 讀到 0，按鈕組被推到狀態列底下）
+    const hr = $('#hud').getBoundingClientRect();
+    const top = hr.height ? hr.top : safeProbe('top') + 10;
     const turn = $('#turn');
     // 轉彎卡寬度＝時間卡右邊到螢幕右緣（手機）
     if (isWide()) sheet().style.top = ($('#hud').getBoundingClientRect().bottom + 10) + 'px';

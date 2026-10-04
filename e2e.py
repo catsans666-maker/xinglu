@@ -96,8 +96,10 @@ def tdx(path, q):
         return [{"StationUID":"TPE1","StationName":{"Zh_tw":"YouBike2.0_捷運台北車站"},"StationPosition":{"PositionLon":121.518,"PositionLat":25.047},"BikesCapacity":28}]
     if path.endswith('/Bike/Availability/City/Taipei'):
         return [{"StationUID":"TPE1","AvailableRentBikes":7,"AvailableReturnBikes":21,"AvailableRentBikesDetail":{"GeneralBikes":6,"ElectricBikes":1},"UpdateTime":"2026-10-04T10:00:00+08:00"}]
-    if '/Bus/Station/City/' in path:
+    if '/Bus/Station/City/' in path and 'contains(' not in q.get('$filter',''):
         return [{"StationUID":"S1","StationName":{"Zh_tw":"臺北車站"},"StationPosition":{"PositionLon":121.5172,"PositionLat":25.0475},"Stops":[{"StopUID":"TPE1001","RouteUID":"TPE15680","RouteName":{"Zh_tw":"307"}}]}] if path.endswith('Taipei') else []
+    if '/Bus/Station/City/' in path and 'contains(StationName' in q.get('$filter',''):
+        return [{"StationUID":"NWT1","StationName":{"Zh_tw":"捷運泰山貴和站(新北大道)"},"StationPosition":{"PositionLon":121.4302,"PositionLat":25.0501},"Stops":[{"StopUID":"NWT9","RouteUID":"NWT1","RouteName":{"Zh_tw":"801"}},{"StopUID":"NWT10","RouteUID":"NWT2","RouteName":{"Zh_tw":"99"}}]}] if path.endswith('NewTaipei') else []
     if path.endswith('/Bus/EstimatedTimeOfArrival/City/Taipei'):
         return [{"StopUID":"TPE1001","RouteUID":"TPE15680","RouteName":{"Zh_tw":"307"},"Direction":0,"EstimateTime":180,"StopStatus":0}]
     if path.endswith('/Bus/Route/City/Taipei'):
@@ -121,6 +123,13 @@ def handle(route):
         return route.fulfill(body=PNG1, content_type='image/png') if state['tt_ok'] else route.fulfill(status=403, body='')
     if 'open-meteo' in u: return js({"current":{"temperature_2m":27.4,"weather_code":2}})
     if 'nominatim' in u and '/reverse' in u: return js({"address":{"city":"臺北市","suburb":"中正區","road":"忠孝西路一段"}})
+    if 'overpass-api.de' in u: return js({"elements":[{"tags":{"name":"7-ELEVEN 後港門市","opening_hours":"24/7","phone":"02-2992-0000"}}]})
+    if 'nominatim' in u and '%E6%B3%B0%E5%B1%B1' in u:   # 「泰山」：開放地圖回一個公車站、一個公園
+        return js([{"place_id":30,"name":"捷運泰山貴和站(新北大道)","category":"highway","type":"bus_stop","display_name":"x","lon":"121.43","lat":"25.05","address":{"city":"新北市","suburb":"泰山區","road":"新北大道七段"}},{"place_id":31,"name":"貴和公園","category":"leisure","type":"park","display_name":"x","lon":"121.431","lat":"25.051","address":{"city":"新北市","suburb":"泰山區"}}])
+    if 'nominatim' in u and '%E6%B7%A1%E6%B0%B4' in u:   # 「淡水」：開放地圖會回一堆同名路線段
+        seg = lambda i, lon: {"place_id":10+i,"name":"捷運淡水信義線","category":"railway","type":"subway","display_name":"捷運淡水信義線","lon":str(lon),"lat":"25.05","address":{"city":"臺北市","road":"中山南路"}}
+        return js([seg(1,121.52), seg(2,121.53), seg(3,121.54), {"place_id":20,"name":"淡水","category":"railway","type":"station","display_name":"淡水","lon":"121.445","lat":"25.168","address":{"city":"新北市","suburb":"淡水區"}},
+                   {"place_id":21,"name":"淡水老街","category":"tourism","type":"attraction","display_name":"淡水老街","lon":"121.44","lat":"25.17","address":{"city":"新北市"}}, {"place_id":22,"name":"淡水老街","category":"tourism","type":"attraction","display_name":"淡水老街","lon":"121.441","lat":"25.171","address":{"city":"新北市"}}])
     if 'nominatim' in u: return js([{"place_id":1,"name":"台北101","display_name":"台北101","lon":"121.5230","lat":"25.0440","address":{"city":"臺北市","suburb":"信義區","road":"信義路五段","house_number":"7"}}])
     if 'routing.openstreetmap.de' in u: return js(OSRM)
     if route.request.method=='OPTIONS': return route.fulfill(status=204, headers=cors)
@@ -243,6 +252,29 @@ with sync_playwright() as pw:
         pg.click('#bLayers')
         # 導航（模擬）
         check(not pg.query_selector('#qMode'), '搜尋列只有一個框（拿掉地點/公車/捷運切換）')
+        ht = pg.evaluate("document.querySelector('#hud').getBoundingClientRect().top"); ct = pg.evaluate("document.querySelector('#ctrl').getBoundingClientRect().top")
+        check(abs(ht - ct) < 1.5, f'右上按鈕組頂端對齊時間卡（{ht} / {ct}）')
+        pg.fill('#q','捷運'); pg.press('#q','Enter'); pg.wait_for_timeout(1200)
+        check('捷運' in pg.text_content('#sheetBody') and '台北車站' in pg.text_content('#sheetBody') and '淡水信義線' not in pg.text_content('#rBody'), '搜「捷運」→ 列出附近的捷運站（不是一堆路線段）')
+        pg.click('[data-act="home"]'); pg.wait_for_timeout(300)
+        # 點地圖上的 7-Eleven（開放地圖向量圖）→ 資料卡＋開放街圖的營業時間、電話
+        pg.evaluate("window.__map.ly['v-poi_r1']={id:'v-poi_r1',type:'symbol',vis:'visible'}; window.__map.q=[{layer:{id:'v-poi_r1'},properties:{name:'7-ELEVEN 後港門市',class:'shop',subclass:'convenience'},geometry:{type:'Point',coordinates:[121.519,25.048]}}]; window.__map.click(); window.__map.q=[]")
+        pg.wait_for_timeout(1500)
+        sb = pg.text_content('#sheetBody')
+        check('7-ELEVEN 後港門市' in sb and '便利商店' in sb and pg.is_visible('#pcRoute'), '點地圖上的超商 → 資料卡（名稱、種類、路線）')
+        check('24 小時營業' in sb and '02-2992-0000' in sb, '資料卡顯示開放街圖的營業時間、電話')
+        pg.click('[data-act="home"]'); pg.wait_for_timeout(300)
+        # 搜站名：官方站牌在前面
+        pg.fill('#q','泰山貴和'); pg.press('#q','Enter'); pg.wait_for_timeout(2600)
+        rb = pg.text_content('#rBody')
+        check('公車站牌' in rb and '捷運泰山貴和站(新北大道)' in rb and '交通部 TDX' in rb, '搜站名 → 官方公車站牌排最前面（含路線）')
+        kw = pg.evaluate("(()=>{const k=document.querySelector('#rBody .t2 .kind'); return k? k.getBoundingClientRect().height : 0})()")
+        check(kw == 0 or kw < 24, f'種類標籤不會斷成兩行（高 {kw}）')
+        pg.click('[data-act="home"]'); pg.wait_for_timeout(300)
+        pg.fill('#q','淡水'); pg.press('#q','Enter'); pg.wait_for_timeout(2600)
+        rb = pg.text_content('#rBody')
+        check('捷運淡水信義線' not in rb and rb.count('淡水老街') == 1 and '淡水' in rb, '開放地圖結果去掉路線段、同名只留一筆')
+        pg.click('[data-act="home"]'); pg.wait_for_timeout(300)
         pg.fill('#q','台北101'); pg.press('#q','Enter'); pg.wait_for_timeout(1500)
         pg.click('#rBody [data-i="0"]'); pg.wait_for_timeout(600)
         check(pg.is_visible('#pcRoute'), '點搜尋結果 → 地點資料卡（有「路線」）')
