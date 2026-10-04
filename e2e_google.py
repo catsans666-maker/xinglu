@@ -46,6 +46,7 @@ with sync_playwright() as pw:
         check('忠孝西路' in pg.text_content('#sheetBody'), '首頁顯示路名（定位 OK）')
         check(pg.evaluate("document.querySelector('.me') !== null"), '我的位置標記出現')
         if tag == 'phone':
+            pg.click('#bSet'); pg.wait_for_timeout(200); pg.select_option('#ytMode', 'pip'); pg.click('[data-close="setDlg"]'); pg.wait_for_timeout(200)
             check(pg.evaluate("!document.querySelector('#pipZone').hidden"), 'iPhone：子母畫面預留區')
             pg.evaluate("document.querySelector('#pipSide').click()"); pg.wait_for_timeout(100)
             check(pg.evaluate("document.body.classList.contains('pip-left')"), '子母畫面可換到左邊，抽屜讓出左邊')
