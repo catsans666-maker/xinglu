@@ -185,3 +185,9 @@ e2e.py         Playwright 端到端測試（地圖程式庫用替身、TDX 用�
 - Google 錯誤：攔 console 的「Google Maps JavaScript API error: XxxMapError」翻成白話；Places／Routes 錯誤用 gHint 翻。設定頁「檢查 Google 設定」逐項測三個 API（用最便宜的請求），附申請步驟與直接連結。
 - iOS 26.0 主畫面 App 收鍵盤後底部空一條（Apple 在 Safari 26.1 修好）：standalone 時地圖用 100lvh，收鍵盤時 scrollTo(0,0)。
 - 國道測速資料是 zip（檔名有中文）：腳本改成網址編碼＋解壓。
+
+## 16. 測速方向、子母畫面左右（2026/10/4 晚）
+- 測速點：政府資料的「拍攝方向」（北向南、東西雙向、北上…）→ core `camDir`。地圖上標誌往行車方向右側挪 9 公尺（台灣靠右，同點兩向分得開），旁邊畫紅色方向箭頭（MapLibre icon-rotate＋地圖對齊；Google 用向量箭頭、地圖轉時重畫）。導航只提醒跟你同方向（差 60° 內）的。開放街圖的方向不可靠，不用。
+- 國道固定式（13940）在 TGOS，GitHub 主機下載被擋（403）；改用開放街圖 Overpass 補（非官方），離政府資料 60 公尺內視為重複。
+- YouTube 子母畫面：iOS 小視窗位置網頁讀不到 → 預留區可切左右（⇆），抽屜讓出那一邊；從 YouTube App 回來後預留區變透明、不擋點地圖。
+- 向量地圖的店家（OSM poi_r1/r7/r20）提早 1.5 級顯示。台灣 OSM 店家本來就少，真正解法是 Google 金鑰。

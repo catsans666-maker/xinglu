@@ -14,7 +14,7 @@ def handle_g(route):
         gstate['q'] = {k: v[0] for k, v in q.items()}
         return route.fulfill(body=GSTUB + f"\nsetTimeout(()=>window['{q['callback'][0]}'](),10);", content_type='text/javascript')
     if 'speedcam.json' in u:
-        cams = [[121.5200, 25.0465, 50, '北向南', '臺北市忠孝西路'], [121.40, 25.10, 60, '', '別處']] + [[120 + i * 0.001, 23, 50, '', ''] for i in range(300)]
+        cams = [[121.5200, 25.0465, 50, '北向南', '臺北市忠孝西路'], [121.5200, 25.0462, 70, '南向北', '對向車道'], [121.40, 25.10, 60, '', '別處']] + [[120 + i * 0.001, 23, 50, '', ''] for i in range(300)]
         return route.fulfill(body=json.dumps({'updated': '2026-10-04', 'n': len(cams), 'cams': cams}, ensure_ascii=False), content_type='application/json', headers={'access-control-allow-origin': '*'})
     return handle(route)
 
@@ -45,6 +45,11 @@ with sync_playwright() as pw:
         check(pg.text_content('#attr') == 'TDX', '版權列不重複 Google')
         check('忠孝西路' in pg.text_content('#sheetBody'), '首頁顯示路名（定位 OK）')
         check(pg.evaluate("document.querySelector('.me') !== null"), '我的位置標記出現')
+        if tag == 'phone':
+            check(pg.evaluate("!document.querySelector('#pipZone').hidden"), 'iPhone：子母畫面預留區')
+            pg.evaluate("document.querySelector('#pipSide').click()"); pg.wait_for_timeout(100)
+            check(pg.evaluate("document.body.classList.contains('pip-left')"), '子母畫面可換到左邊，抽屜讓出左邊')
+            pg.evaluate("document.querySelector('#pipSide').click()")
         # 定位平順移動＋跟著你走
         check(pg.evaluate("document.querySelector('#bLoc').dataset.mode") == 'follow', '打開定位後預設跟著你走')
         ctx.set_geolocation({'latitude': 25.0482, 'longitude': 121.5180}); pg.wait_for_timeout(350)
@@ -120,6 +125,9 @@ with sync_playwright() as pw:
         check(pg.is_visible('#turn') and '忠孝西路' in pg.text_content('#turn'), '導航轉彎卡（Google 指示）')
         pg.screenshot(path=f'g-{tag}-{scheme}-nav.png')
         check(pg.is_visible('#hudCam') and pg.text_content('#hudCamLim') == '50', '前方測速照相提醒（限速 50）')
+        arrows = pg.evaluate("window.__gobjs.markers.filter(m => m.map && m.o.icon && typeof m.o.icon.path === 'string' && m.o.icon.path.startsWith('M') && m.o.icon.rotation != null).map(m => m.o.icon.rotation)")
+        check(len(arrows) >= 2, f'測速點旁畫行車方向箭頭（{len(arrows)} 個）')
+        check(pg.text_content('#hudCamLim') == '50', '對向車道（南向北、限速 70）的測速不提醒')
         check(pg.evaluate("window.__gmap.t") >= 45, '導航視角傾斜')
         pg.click('[data-act="endnav"]'); pg.wait_for_timeout(800)
         check(not pg.is_visible('#hudCam') and not pg.is_visible('#turn'), '結束導航收起提醒')

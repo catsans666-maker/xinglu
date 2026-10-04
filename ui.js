@@ -209,6 +209,8 @@
         if (c.layout.visibility === 'none') S.vecHidden.add(c.id);
         c.layout.visibility = 'none';
         if (c.type === 'symbol' && c.layout['text-field'] && /name/.test(JSON.stringify(c.layout['text-field']))) c.layout['text-field'] = ZH_NAME;
+        // 店家、餐廳早一級顯示（原本要拉到很近才出現）
+        if (/^poi_r(1|7|20)$/.test(l.id) && c.minzoom) c.minzoom = Math.max(13, c.minzoom - 1.5);
         return c;
       });
       st.layers.push(...vl);
@@ -472,6 +474,7 @@
     const jobs = [...metroColors].map((c) => addSvgImage('metro-' + c, badge('round', c, GLYPH.train(c))));
     jobs.push(addSvgImage('tra', badge('square', '#1b3a8c', GLYPH.train('#1b3a8c'))));
     jobs.push(addSvgImage('thsr', badge('square', '#e8730c', GLYPH.hsr('#e8730c'))));
+    jobs.push(addSvgImage('cam-arrow', '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 5 31 30 20 24 9 30z" fill="#e60012" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>'));
     CAM_ICONS.forEach((v) => jobs.push(addSvgImage('cam-' + v, `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="21" r="17.5" fill="rgba(0,0,0,.25)"/><circle cx="20" cy="20" r="16.5" fill="#fff" stroke="#e60012" stroke-width="5"/>${v ? `<text x="20" y="25.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="${v >= 100 ? 13 : 15}" fill="#111">${v}</text>` : '<rect x="12" y="15" width="16" height="11" rx="2" fill="#111"/><circle cx="20" cy="20.5" r="3.4" fill="#fff"/><circle cx="20" cy="20.5" r="1.8" fill="#111"/>'}</svg>`)));
     [['ok', '#34c759'], ['low', '#ff9500'], ['empty', '#ff3b30'], ['na', '#8e8e93']].forEach(([k, c]) => jobs.push(addSvgImage('bike-' + k, badge('round', c, GLYPH.bike()))));
     return Promise.all(jobs);
@@ -517,6 +520,7 @@
 
     // 測速照相（限速標誌）與搜尋結果紅點
     map.addSource('speedcam', { type: 'geojson', data: emptyFC() });
+    map.addLayer({ id: 'speedcam-dir', type: 'symbol', source: 'speedcam', minzoom: 14, filter: ['has', 'dir'], layout: { 'icon-image': 'cam-arrow', 'icon-rotate': ['get', 'dir'], 'icon-rotation-alignment': 'map', 'icon-offset': [0, -30], 'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.6, 17, 0.85], 'icon-allow-overlap': true, visibility: SC.on ? 'visible' : 'none' } });
     map.addLayer({ id: 'speedcam', type: 'symbol', source: 'speedcam', minzoom: 12.5, layout: { 'icon-image': ['concat', 'cam-', ['to-string', ['get', 'icon']]], 'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.55, 16, 0.85], 'icon-allow-overlap': true, visibility: SC.on ? 'visible' : 'none' } });
     map.addSource('search', { type: 'geojson', data: emptyFC() });
     map.addLayer({ id: 'search-pt', type: 'circle', source: 'search', paint: { 'circle-radius': 7, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
@@ -604,7 +608,7 @@
         }
         if (f.layer.id === 'metro-lines') return openLine(f.properties.op, f.properties.line);   // 點捷運線＝選這條線
         if (f.layer.id === 'search-pt') { const r = S.searchRows?.[f.properties.i]; if (r) openPlace(r); return; }
-        if (f.layer.id === 'speedcam') { toast(`測速照相${f.properties.limit ? `・限速 ${f.properties.limit}` : ''}${f.properties.addr ? '・' + f.properties.addr : ''}`); return; }
+        if (f.layer.id === 'speedcam') { const q = f.properties; toast(`測速照相${q.limit ? `・限速 ${q.limit}` : ''}${q.dirTxt ? '・' + q.dirTxt : ''}${q.addr ? '・' + q.addr : ''}${q.src === 'o' ? '・資料：開放街圖（非官方）' : ''}`); return; }
         return openFeature(f.layer.id, f.properties, f.geometry.coordinates);
       }
     });
@@ -1778,9 +1782,20 @@
     if (SC.list) return Promise.resolve(SC.list);
     if (!SC.loading) {
       SC.loading = getJSON(SPEEDCAM_URL, '測速照相資料').then((j) => {
-        SC.list = (j.cams || []).map((c) => ({ p: [c[0], c[1]], limit: c[2] || 0, dir: c[3] || '', addr: c[4] || '' }));
+        SC.list = (j.cams || []).map((c) => {
+          const src = c[5] || 'g';
+          // 開放街圖的 direction 有人標「相機朝向」、有人標「車流方向」，不可靠 → 只用政府資料的方向
+          const d = src === 'g' ? C.camDir(c[3]) : { deg: null, both: false };
+          return { p: [c[0], c[1]], limit: c[2] || 0, dir: c[3] || '', addr: c[4] || '', src, deg: d.deg, both: d.both };
+        });
         SC.updated = j.updated;
-        if (map?.getSource('speedcam')) map.getSource('speedcam').setData({ type: 'FeatureCollection', features: SC.list.map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: c.p }, properties: { limit: c.limit, icon: CAM_ICONS.includes(c.limit) ? c.limit : 0, addr: c.addr } })) });
+        if (map?.getSource('speedcam')) map.getSource('speedcam').setData({ type: 'FeatureCollection', features: SC.list.map((c) => {
+          // 有方向的：標誌往行車方向的右側（台灣靠右）挪 9 公尺，同一點兩個方向的才分得開；旁邊再畫箭頭
+          const p = c.deg != null ? C.offsetPt(c.p, c.deg + 90, 9) : c.p;
+          const props = { limit: c.limit, icon: CAM_ICONS.includes(c.limit) ? c.limit : 0, addr: c.addr, dirTxt: c.both ? '雙向' : C.DIR_NAME(c.deg), src: c.src };
+          if (c.deg != null) props.dir = c.deg;
+          return { type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: props };
+        }) });
         if (!$('#layerPop').hidden) renderLayerPop();
         return SC.list;
       }).catch((e) => { SC.loading = null; SC.err = true; throw e; });
@@ -1793,7 +1808,7 @@
   }
   function applySpeedcam() {
     if (!map?.getLayer('speedcam')) return;
-    map.setLayoutProperty('speedcam', 'visibility', SC.on ? 'visible' : 'none');
+    ['speedcam', 'speedcam-dir'].forEach((id) => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', SC.on ? 'visible' : 'none'); });
     if (SC.on) loadSpeedcam().catch(() => toast('測速照相資料載入失敗'));
   }
   function toggleSpeedcam() {
@@ -1809,7 +1824,14 @@
     co.forEach(([x, y]) => { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); });
     const m = 0.001;
     N.cams = SC.list.filter((c) => c.p[0] > w - m && c.p[0] < e + m && c.p[1] > s - m && c.p[1] < n + m)
-      .map((c) => ({ c, pr: C.projectOnLine(c.p, co) })).filter((x) => x.pr.d < 30).map((x) => ({ c: x.c, s: x.pr.s }));
+      .map((c) => ({ c, pr: C.projectOnLine(c.p, co) })).filter((x) => x.pr.d < 30)
+      .filter((x) => {   // 有方向的測速，只算跟你同方向的（對向車道的不提醒）
+        if (x.c.deg == null || x.c.both) return true;
+        const i = Math.min(x.pr.i, co.length - 2);
+        const segB = C.bearing(co[i], co[i + 1]);
+        return Math.abs(((x.c.deg - segB + 540) % 360) - 180) <= 60;
+      })
+      .map((x) => ({ c: x.c, s: x.pr.s }));
     N.camFor = N.route;
     return N.cams;
   }
@@ -2384,6 +2406,8 @@
     const pip = ytMode() === 'pip';
     const pipHidden = LS.getItem('pip.hide') === '1';
     document.body.classList.toggle('pip', pip);
+    document.body.classList.toggle('pip-left', LS.getItem('pip.side') === 'left');
+    $('#pipZone').classList.toggle('playing', !!YT.pipPlaying);
     setQMode(S.qMode);
     $('#pipZone').hidden = !pip || pipHidden;
     if (pip) { $('#yt').hidden = true; $('#ytFab').hidden = !pipHidden; }
@@ -2401,6 +2425,7 @@
   }
   function openYouTubeApp() {
     const t0 = Date.now();
+    YT.wentOut = t0;
     location.href = 'youtube://';
     setTimeout(() => { if (!document.hidden && Date.now() - t0 < 2500) window.open('https://m.youtube.com/', '_blank'); }, 1200);
   }
@@ -2687,6 +2712,13 @@
 
     // YouTube
     $('#pipOpen').addEventListener('click', openYouTubeApp);
+    // 影片小視窗在哪一邊由 iOS 決定（使用者拖到哪就在哪），網頁讀不到；讓你自己切左右，抽屜跟著讓位
+    $('#pipSide').addEventListener('click', () => { LS.setItem('pip.side', LS.getItem('pip.side') === 'left' ? 'right' : 'left'); applyYtMode(); });
+    // 從 YouTube App 回來＝影片多半已經縮成小視窗在播：把虛線框和說明收起來
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !YT.wentOut || Date.now() - YT.wentOut < 1500) return;
+      YT.wentOut = 0; YT.pipPlaying = true; applyYtMode();
+    });
     $('#pipHide').addEventListener('click', () => { LS.setItem('pip.hide', '1'); applyYtMode(); });
     $('#ytFab').addEventListener('click', () => {
       if (ytMode() === 'pip') return openYouTubeApp();

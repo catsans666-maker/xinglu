@@ -217,6 +217,14 @@ svg { display: block; }
 /* 子母畫面模式：抽屜收合時讓出右下角 */
 body.pip #sheet[data-d="peek"] { right: calc(42% + 20px); }
 body.pip #sheet[data-d="peek"] #qMode { display: none; }
+/* 影片放左下：抽屜讓出左邊 */
+body.pip.pip-left #sheet[data-d="peek"] { right: 12px; left: calc(42% + 20px); }
+body.pip.pip-left #pipZone { right: auto; left: 12px; }
+/* 播放中：不再顯示虛線框和說明，只留角落的小按鈕，點地圖不受影響 */
+#pipZone.playing { border-color: transparent; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none; }
+#pipZone.playing .in { display: none; }
+#pipZone.playing #pipHide, #pipZone.playing #pipSide { pointer-events: auto; background: var(--glass); border-radius: 50%; box-shadow: var(--lift); }
+#pipSide { position: absolute; top: 4px; left: 6px; width: 24px; height: 24px; color: var(--muted); font-size: 15px; line-height: 1; }
 
 /* 電腦：抽屜在左側 */
 @media (min-width: 900px) {
@@ -655,9 +663,10 @@ body { font-size: 17px; letter-spacing: -.01em; }
 
 <div id="pipZone" hidden>
   <button id="pipHide" aria-label="隱藏">×</button>
+  <button id="pipSide" aria-label="影片在另一邊">⇆</button>
   <div class="in">
     <button id="pipOpen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>開 YouTube</button>
-    <small>選好影片後滑回主畫面，<br>影片會浮在這裡</small>
+    <small>選好影片後滑回主畫面，<br>把小視窗拖到這個角落</small>
   </div>
 </div>
 

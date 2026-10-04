@@ -376,7 +376,7 @@
   }
   // 點投影到折線上：s＝從起點沿線走幾公尺、d＝離線多遠（測速照相用：判斷「在前方路線上多遠」）
   function projectOnLine(p, coords) {
-    if (!coords || coords.length < 2) return { s: 0, d: Infinity };
+    if (!coords || coords.length < 2) return { s: 0, d: Infinity, i: 0 };
     const kx = Math.cos(rad(p[1])) * R * Math.PI / 180, ky = R * Math.PI / 180;
     let best = { s: 0, d: Infinity }, acc = 0;
     for (let i = 0; i < coords.length - 1; i++) {
@@ -385,10 +385,15 @@
       const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, len = Math.sqrt(L);
       const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
       const d = Math.hypot(ax + t * dx, ay + t * dy);
-      if (d < best.d) best = { s: acc + t * len, d };
+      if (d < best.d) best = { s: acc + t * len, d, i };
       acc += len;
     }
     return best;
+  }
+  // 從 p 往方位 deg 走 m 公尺
+  function offsetPt(p, deg, m) {
+    const r = deg * Math.PI / 180;
+    return [p[0] + (m * Math.sin(r)) / (111320 * Math.cos(p[1] * Math.PI / 180)), p[1] + (m * Math.cos(r)) / 110540];
   }
   // 沿折線走 m 公尺後的位置與方位角
   function alongLine(coords, m) {
@@ -514,6 +519,28 @@
       durText: txt(r.localizedValues?.duration), fare, src: 'google' };
   }
 
+
+  // ---- 測速照相「拍攝方向」文字 → 車流方向（度，0＝往北）；雙向回 both ----
+  //   政府資料：「北向南」「南往北」「東西雙向」「北上」「南下」「北向」；開放街圖：「deg:180」
+  const CARD = { 北: 0, 東: 90, 南: 180, 西: 270 };
+  function camDir(t) {
+    const s = String(t || '').replace(/\s/g, '');
+    let m = s.match(/^deg:(\d+)/);
+    if (m) return { deg: +m[1] % 360, both: false };
+    if (/雙向|雙邊|兩向/.test(s)) return { deg: null, both: true };
+    m = s.match(/([東南西北])[向往至到]([東南西北])/);
+    if (m && m[1] !== m[2]) return { deg: CARD[m[2]], both: false };
+    m = s.match(/([東南西北])(上|下|行|向|側)/);
+    if (m) {
+      // 「北上」＝往北、「南下」＝往南、「北向／北側」在國道是往北（國道慣例：北向＝北上車道）
+      return { deg: CARD[m[1]], both: false };
+    }
+    m = s.match(/往([東南西北])/);
+    if (m) return { deg: CARD[m[1]], both: false };
+    return { deg: null, both: false };
+  }
+  const DIR_NAME = (d) => (d == null ? '' : ['往北', '往東北', '往東', '往東南', '往南', '往西南', '往西', '往西北'][Math.round(d / 45) % 8]);
+
   // ---- YouTube 網址解析 ----
   function parseYouTube(input) {
     const s = (input || '').trim();
@@ -569,9 +596,9 @@
   const Core = {
     COUNTIES, METRO_OPS, EP, BASE, TOKEN_URL,
     normTW, zh, ymd, addressInCounty, wktToGeometry, busEtaText, thsrUpcoming, createClient, pos, pointsFC,
-    dist, distToLine, projectOnLine, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
+    dist, distToLine, projectOnLine, offsetPt, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
     inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl, tomtomMapUrl, tomtomMapRelayUrl,
-    googleManeuver, fromGoogleRoute, llOf,
+    googleManeuver, fromGoogleRoute, llOf, camDir, DIR_NAME,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   else root.Core = Core;

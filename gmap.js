@@ -9,7 +9,7 @@
 
   // ---------- MapLibre 運算式（只做 ui.js 有用到的） ----------
   function ev(e, f, z) {
-    if (!Array.isArray(e)) return e;
+    if (!Array.isArray(e) || typeof e[0] !== 'string') return e;   // 數字陣列（例如 icon-offset）照原樣
     const p = f.properties || {};
     const [op, ...a] = e;
     const v = (x) => ev(x, f, z);
@@ -216,7 +216,12 @@
       g.addListener('idle', () => { this._renderAll(true); this._fire('moveend', {}); });
       g.addListener('zoom_changed', () => { this._restyleZoom(); this._fire('zoom', {}); });
       g.addListener('dragstart', () => { this._stopAnim(); this._fire('dragstart', {}); this._fire('movestart', {}); });
-      g.addListener('heading_changed', () => { this._markers.forEach((m) => m._spin()); this._fire('rotate', {}); });
+      g.addListener('heading_changed', () => {
+        this._markers.forEach((m) => m._spin());
+        // 跟著地圖轉的圖示（測速方向箭頭）：下一格重畫
+        if (!this._rotRaf) this._rotRaf = requestAnimationFrame(() => { this._rotRaf = 0; this._layers.filter((l) => l.layout['icon-rotation-alignment'] === 'map' && l.layout['icon-rotate'] != null).forEach((l) => this._render(l, true)); });
+        this._fire('rotate', {});
+      });
       g.addListener('click', (e) => {
         if (e.placeId) {
           // 點 Google 的店家／地標：不要跳 Google 自己的小視窗，交給 ui.js 開資料卡
@@ -447,7 +452,13 @@
           const L = l.layout;
           const imgId = L['icon-image'] ? ev(L['icon-image'], f, z) : null;
           const im = imgId && this._img[imgId];
-          if (im) {
+          if (L['icon-rotate'] != null) {
+            // 要旋轉的圖示（Google 舊式標記的圖片不能轉）→ 用向量箭頭畫，位移跟著旋轉
+            const s = ev(L['icon-size'] ?? 1, f, z), off = ev(L['icon-offset'] ?? [0, 0], f, z) || [0, 0];
+            const rot = (ev(L['icon-rotate'], f, z) || 0) - (L['icon-rotation-alignment'] === 'map' ? this.getBearing() : 0);
+            const k = 20 * s / 15, ox = off[0] * s, oy = off[1] * s;   // 箭頭圖原本 40px（2 倍解析度）
+            opt = { icon: { path: `M${ox} ${oy - 7.5 * k} L${ox + 5.5 * k} ${oy + 5 * k} L${ox} ${oy + 1.5 * k} L${ox - 5.5 * k} ${oy + 5 * k} Z`, rotation: rot, scale: 1, fillColor: '#e60012', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 1.5, anchor: new gm.Point(0, 0) } };
+          } else if (im) {
             const s = ev(L['icon-size'] ?? 1, f, z);
             opt = { icon: { url: im.url, scaledSize: new gm.Size(im.w * s, im.h * s), anchor: new gm.Point(im.w * s / 2, im.h * s / 2) } };
           } else if (L['text-field']) {
