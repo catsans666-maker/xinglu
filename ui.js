@@ -15,7 +15,9 @@
   };
   // TDX 被擋（429）時跳提示，讓人知道不是當機，是在等
   // 中繼站網址：設定裡填的優先，其次是網頁裡寫死的 window.XINGLU_RELAY（在 index.html 最上面改）
-  const relayUrl = () => (LS.getItem('relay') || window.XINGLU_RELAY || '').trim().replace(/\/$/, '');
+  //   網頁直接從中繼站（*.workers.dev）打開時，中繼站就是自己
+  const selfRelay = /\.workers\.dev$/.test(location.hostname) ? location.origin : '';
+  const relayUrl = () => (LS.getItem('relay') || window.XINGLU_RELAY || selfRelay || '').trim().replace(/\/$/, '');
   const tdx = C.createClient({ storage: LS, fetch: (...a) => fetch(...a), relay: relayUrl, onThrottle: (ms) => toast(`TDX 呼叫太密被擋，${Math.round(ms / 1000)} 秒後自動重試`) });
 
   // 非 TDX 的外部呼叫也記進連線紀錄

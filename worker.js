@@ -8,10 +8,12 @@
  *   /tdx/v2/...                → https://tdx.transportdata.tw/api/basic/v2/...
  *   /tomtom/{style}/{z}/{x}/{y}.png → TomTom 即時路況圖磚
  *   /health                    → 檢查金鑰有沒有設好
+ *   /                          → 網頁本身（從 GitHub 抓最新的 index.html），所以這個網址就是行路台灣
  */
 const ALLOWED_ORIGINS = ['https://catsans666-maker.github.io', 'http://localhost:8000', 'http://127.0.0.1:8000'];
 const SITE = 'https://catsans666-maker.github.io/';
 const TDX_BASE = 'https://tdx.transportdata.tw/api/basic';
+const PAGE_URL = 'https://raw.githubusercontent.com/catsans666-maker/xinglu/main/index.html';
 const TOKEN_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
 
 // 快取秒數：即時資料短、站點線型長
@@ -85,21 +87,31 @@ async function handleTomTom(url, request, env, ctx) {
   });
 }
 
+async function handlePage(request, ctx) {
+  return cached(request, ctx, 60, async () => {
+    const r = await fetch(PAGE_URL, { cf: { cacheTtl: 60 } });
+    if (!r.ok) return new Response('網頁抓不到（GitHub 回 ' + r.status + '）', { status: 502, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    return new Response(r.body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return handlePage(request, ctx);
     const origin = request.headers.get('Origin') || '';
-    const allowed = ALLOWED_ORIGINS.includes(origin);
+    const sites = [...ALLOWED_ORIGINS, url.origin];   // 網頁就放在中繼站本身時，同網址也算自己人
+    const allowed = sites.includes(origin);
     const isTile = url.pathname.startsWith('/tomtom/');
-    // 圖磚是 <img> 載入，常常不帶 Origin；改看 Referer
+    // 同網址的請求、<img> 載入的圖磚，常常不帶 Origin；改看 Referer
     const ref = request.headers.get('Referer') || '';
-    const okRef = ALLOWED_ORIGINS.some((o) => ref.startsWith(o + '/'));
+    const okRef = sites.some((o) => ref.startsWith(o + '/'));
     if (request.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: allowed ? cors(origin) : {} });
     if (url.pathname === '/health') {
       return json({ tdx: !!(env.TDX_ID && env.TDX_SECRET), tomtom: !!env.TOMTOM_KEY }, 200, allowed ? cors(origin) : {});
     }
     // 只讓自己的網站用（擋掉別的網站盜用；直接用程式打的人擋不住，但門檻高很多）
-    if (!(allowed || (isTile && okRef))) return json({ error: '不允許的來源' }, 403);
+    if (!(allowed || okRef)) return json({ error: '不允許的來源' }, 403);
     const h = allowed ? cors(origin) : { 'Access-Control-Allow-Origin': '*' };
     let res;
     try {

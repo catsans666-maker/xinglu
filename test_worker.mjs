@@ -11,6 +11,7 @@ globalThis.fetch = async (url, o = {}) => {
     assert.strictEqual(o.headers.authorization, 'Bearer TK');
     return new Response(JSON.stringify([{ ok: 1 }]), { status: tdxStatus, headers: { 'content-type': 'application/json' } });
   }
+  if (String(url).startsWith('https://raw.githubusercontent.com/')) return new Response('<!doctype html><title>行路台灣</title>', { status: 200, headers: { 'content-type': 'text/plain' } });
   if (String(url).startsWith('https://api.tomtom.com/')) return new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } });
   throw new Error('unexpected ' + url);
 };
@@ -57,4 +58,13 @@ r = await W.fetch(req('/tomtom/evil/1/2/3.png', O), env, ctx);
 assert.strictEqual(r.status, 400);
 r = await W.fetch(new Request('https://w.dev/tdx/v2/a', { method: 'OPTIONS', headers: O }), env, ctx);
 assert.strictEqual(r.status, 204);
+// 網頁本身
+r = await W.fetch(req('/'), env, ctx);
+assert.strictEqual(r.status, 200); assert.ok(r.headers.get('content-type').startsWith('text/html'));
+assert.ok((await r.text()).includes('行路台灣'));
+// 網頁放在中繼站本身：同網址請求（不帶 Origin，只有 Referer）要放行
+r = await W.fetch(req('/tdx/v2/Rail/THSR/Station?%24format=JSON', { Referer: 'https://w.dev/' }), env, ctx);
+assert.strictEqual(r.status, 200, '同網址請求放行');
+r = await W.fetch(req('/tdx/v2/Rail/THSR/Station?%24format=JSON', { Referer: 'https://w.dev.evil.com/' }), env, ctx);
+assert.strictEqual(r.status, 403, '假冒的相似網址擋掉');
 console.log('Worker 測試通過');
