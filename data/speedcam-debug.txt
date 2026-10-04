@@ -7,8 +7,29 @@ dataset 13940 meta: {"help":"","success":true,"result":{"categoryService":"A00",
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
+manual:115-07-20-國道公路固定式測速照相地點.csv 欄位: ['設備編號', '型式', '縣市', '行政區', '設置區域描述', '設置地點', '取締項目', '座標緯度', '座標經度', '拍攝方向', '速限', '管轄單位', '備註']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['1', '雷達', '', '', '', '國道一號南向2公里', '超速', '25.106857', '121.724738', '北往南', '100', '國道公路警一隊', '']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['2', '雷達', '', '', '', '國道一號南向13.7公里', '超速', '25.066725', '121.624945', '北往南', '100', '國道公路警一隊', '']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['3', '雷達', '', '', '', '國道一號南向22.7公里', '超速', '25.07305', '121.536862', '北往南', '100', '國道公路警一隊', '']
+手動檔 115-07-20-國道公路固定式測速照相地點.csv: 176 筆
+manual:manifest.csv 欄位: ['name', 'schema', 'description']
+manual:manifest.csv 範例: ['115-07-20-國道公路固定式測速照相地點.csv', '', '國道公路固定式測速照相地點']
+manual:manifest.csv 找不到經緯度欄位
+手動檔 manifest.csv: 0 筆
+manual:115-07-20-國道公路固定式測速照相地點.csv 欄位: ['設備編號', '型式', '縣市', '行政區', '設置區域描述', '設置地點', '取締項目', '座標緯度', '座標經度', '拍攝方向', '速限', '管轄單位', '備註']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['1', '雷達', '', '', '', '國道一號南向2公里', '超速', '25.106857', '121.724738', '北往南', '100', '國道公路警一隊', '']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['2', '雷達', '', '', '', '國道一號南向13.7公里', '超速', '25.066725', '121.624945', '北往南', '100', '國道公路警一隊', '']
+manual:115-07-20-國道公路固定式測速照相地點.csv 範例: ['3', '雷達', '', '', '', '國道一號南向22.7公里', '超速', '25.07305', '121.536862', '北往南', '100', '國道公路警一隊', '']
+手動檔 115-07-20-國道公路固定式測速照相地點.csv: 176 筆
+manual:manifest.csv 欄位: ['name', 'schema', 'description']
+manual:manifest.csv 範例: ['115-07-20-國道公路固定式測速照相地點.csv', '', '國道公路固定式測速照相地點']
+manual:manifest.csv 找不到經緯度欄位
+手動檔 manifest.csv: 0 筆
+OSM https://overpass-api.de/api/interpreter 失敗 HTTP Error 504: Gateway Timeout
+OSM https://overpass.kumi.systems/api/interpreter 失敗 The read operation timed out
+OSM https://overpass.private.coffee/api/interpreter 失敗 The read operation timed out
 OSM https://overpass-api.de/api/interpreter: 943 筆
-開放街圖補進 523 筆
+開放街圖補進 519 筆
 候選 106636: 國道公路警察局交岔路口重點違規錄影地點 | CSV https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/B633C50F-296A-44B0-BCE4-7D6DF3FDA5B9/resource/DC818BE8-4AD8-4AB7-9056-AEE39C47760C/download
 候選 178143: 嘉義縣警察局固定式測速照相設置地點 | CSV https://ws-tm.cyhg.gov.tw/001/Upload/1330/relfile/13620/248277/939333b3-dff4-4b72-b18a-d14f5983455f.csv
 候選 100856: 國道公路警察局闖紅燈照相地點 | CSV https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/EF974C67-917B-43DA-A49C-F1480EEEDB23/resource/C1EC920B-69C5-4A59-B965-2C15A5708C66/download
