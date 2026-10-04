@@ -374,6 +374,22 @@
     }
     return best;
   }
+  // 點投影到折線上：s＝從起點沿線走幾公尺、d＝離線多遠（測速照相用：判斷「在前方路線上多遠」）
+  function projectOnLine(p, coords) {
+    if (!coords || coords.length < 2) return { s: 0, d: Infinity };
+    const kx = Math.cos(rad(p[1])) * R * Math.PI / 180, ky = R * Math.PI / 180;
+    let best = { s: 0, d: Infinity }, acc = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const ax = (coords[i][0] - p[0]) * kx, ay = (coords[i][1] - p[1]) * ky;
+      const bx = (coords[i + 1][0] - p[0]) * kx, by = (coords[i + 1][1] - p[1]) * ky;
+      const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, len = Math.sqrt(L);
+      const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+      const d = Math.hypot(ax + t * dx, ay + t * dy);
+      if (d < best.d) best = { s: acc + t * len, d };
+      acc += len;
+    }
+    return best;
+  }
   // 沿折線走 m 公尺後的位置與方位角
   function alongLine(coords, m) {
     let acc = 0;
@@ -413,6 +429,8 @@
   };
   function maneuverText(step) {
     const m = (step && step.maneuver) || {};
+    // Google 路線本身就有中文指示，直接用
+    if (step && step.instr) return { text: m.type === 'arrive' ? '抵達目的地' : step.instr, icon: m.type === 'arrive' ? 'arrive' : m.type === 'roundabout' ? 'roundabout' : (m.modifier || 'straight'), name: step.name || '' };
     const mod = m.modifier || 'straight';
     const name = step.name || step.ref || '';
     const into = name ? `，進入${name}` : '';
@@ -432,6 +450,68 @@
       default: text = (MOD[mod] || '繼續') + into;
     }
     return { text, icon, name };
+  }
+
+
+  // ---- Google Routes（Route 類別）→ 跟 OSRM 一樣的格式，導航程式不用改 ----
+  // Google maneuver 代號 → OSRM 的 type／modifier
+  function googleManeuver(g) {
+    const k = String(g || '').toUpperCase();
+    const side = /LEFT/.test(k) ? 'left' : /RIGHT/.test(k) ? 'right' : 'straight';
+    if (k === 'DEPART') return { type: 'depart', modifier: 'straight' };
+    if (/ROUNDABOUT/.test(k)) return { type: 'roundabout', modifier: side };
+    if (/UTURN/.test(k)) return { type: 'turn', modifier: 'uturn' };
+    if (/SHARP/.test(k)) return { type: 'turn', modifier: 'sharp ' + side };
+    if (/SLIGHT|KEEP/.test(k)) return { type: 'turn', modifier: 'slight ' + side };
+    if (/FORK/.test(k)) return { type: 'fork', modifier: 'slight ' + side };
+    if (/RAMP/.test(k)) return { type: 'on ramp', modifier: 'slight ' + side };
+    if (/MERGE/.test(k)) return { type: 'merge', modifier: 'straight' };
+    if (/TURN/.test(k)) return { type: 'turn', modifier: side };
+    if (k === 'NAME_CHANGE') return { type: 'new name', modifier: 'straight' };
+    return { type: 'continue', modifier: 'straight' };
+  }
+  // LatLng／LatLngAltitude／{lat,lng} 都吃
+  const llOf = (p) => {
+    if (!p) return null;
+    const lat = typeof p.lat === 'function' ? p.lat() : p.lat ?? p.latitude;
+    const lng = typeof p.lng === 'function' ? p.lng() : p.lng ?? p.longitude;
+    return Number.isFinite(lat) && Number.isFinite(lng) ? [lng, lat] : null;
+  };
+  const txt = (v) => (v == null ? '' : typeof v === 'string' ? v : v.text || '');
+  const secOf = (o) => (o.durationMillis != null ? o.durationMillis / 1000 : o.staticDurationMillis != null ? o.staticDurationMillis / 1000 : 0);
+  const VEHICLE = { BUS: '公車', INTERCITY_BUS: '客運', TROLLEYBUS: '公車', SUBWAY: '捷運', METRO_RAIL: '捷運', LIGHT_RAIL: '輕軌', TRAM: '輕軌', MONORAIL: '捷運',
+    HEAVY_RAIL: '火車', COMMUTER_TRAIN: '火車', RAIL: '火車', HIGH_SPEED_TRAIN: '高鐵', LONG_DISTANCE_TRAIN: '火車', FERRY: '渡輪', CABLE_CAR: '纜車', GONDOLA_LIFT: '纜車', FUNICULAR: '纜車', SHARE_TAXI: '計程車' };
+  function fromGoogleRoute(r) {
+    const coords = (r.path || []).map(llOf).filter(Boolean);
+    const steps = [], segs = [];
+    (r.legs || []).forEach((leg) => (leg.steps || []).forEach((st) => {
+      const sc = (st.path || []).map(llOf).filter(Boolean);
+      const ni = st.navigationInstruction || {};
+      const dist = st.distanceMeters || 0, dur = secOf(st);
+      const td = st.transitDetails;
+      if (td) {
+        const line = td.transitLine || {}, veh = line.vehicle || {};
+        const vt = String(veh.type || '').toUpperCase();
+        segs.push({ kind: 'transit', vehicle: VEHICLE[vt] || txt(veh.name) || '大眾運輸', vtype: vt,
+          line: line.nameShort || line.shortName || line.name || '', lineName: line.name || '', color: line.color || '#0a84ff', textColor: line.textColor || '#fff',
+          from: td.departureStop?.name || '', to: td.arrivalStop?.name || '', fromP: llOf(td.departureStop?.location), toP: llOf(td.arrivalStop?.location),
+          stops: td.stopCount || 0, headsign: td.headsign || '', dep: td.departureTime || null, arr: td.arrivalTime || null,
+          depText: txt(td.localizedValues?.departureTime?.time || td.localizedValues?.departureTime), coords: sc, distance: dist, duration: dur });
+        return;
+      }
+      const last = segs[segs.length - 1];
+      if (last && last.kind === 'walk') { last.distance += dist; last.duration += dur; last.coords.push(...sc); last.n++; }
+      else segs.push({ kind: 'walk', distance: dist, duration: dur, coords: sc.slice(), n: 1 });
+      steps.push({ maneuver: { ...googleManeuver(ni.maneuver), location: sc[0] || coords[0] }, instr: ni.instructions || '', name: '', distance: dist, duration: dur });
+    }));
+    if (coords.length) {
+      if (!steps.length || steps[0].maneuver.type !== 'depart') steps.unshift({ maneuver: { type: 'depart', modifier: 'straight', location: coords[0] }, instr: '出發', name: '', distance: 0, duration: 0 });
+      else steps[0].maneuver.type = 'depart';
+      steps.push({ maneuver: { type: 'arrive', modifier: 'straight', location: coords[coords.length - 1] }, instr: '抵達目的地', name: '', distance: 0, duration: 0 });
+    }
+    const fare = txt(r.localizedValues?.transitFare) || txt(r.travelAdvisory?.transitFare?.text) || null;
+    return { coords, steps, segs, distance: r.distanceMeters || 0, duration: secOf(r),
+      durText: txt(r.localizedValues?.duration), fare, src: 'google' };
   }
 
   // ---- YouTube 網址解析 ----
@@ -489,8 +569,9 @@
   const Core = {
     COUNTIES, METRO_OPS, EP, BASE, TOKEN_URL,
     normTW, zh, ymd, addressInCounty, wktToGeometry, busEtaText, thsrUpcoming, createClient, pos, pointsFC,
-    dist, distToLine, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
+    dist, distToLine, projectOnLine, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
     inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl, tomtomMapUrl, tomtomMapRelayUrl,
+    googleManeuver, fromGoogleRoute, llOf,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   else root.Core = Core;

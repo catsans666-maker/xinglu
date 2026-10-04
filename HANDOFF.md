@@ -154,3 +154,27 @@ e2e.py         Playwright 端到端測試（地圖程式庫用替身、TDX 用�
 - 網頁：`index.html` 最上面 `window.XINGLU_RELAY = ''` 填 Worker 網址；設定頁也可填（優先）。自己填 TDX 金鑰時改為直連（優先於中繼站）。
 - 測試：`node test4.js`（中繼站用戶端）、`node test_worker.mjs`（Worker）、`python3 e2e_relay.py`（不填金鑰的流程）。
 - Repo：github.com/catsans666-maker/xinglu（Pages 要使用者自己在 Settings → Pages 開；API 被擋）。
+
+## 13. Google 地圖版（2026/10/4 下午）
+- **有 Google 金鑰就用 Google**（設定頁「Google 地圖」或 template.html 的 `window.XINGLU_GOOGLE`）；沒有或載入失敗 → 自動退回 MapLibre 開放地圖，功能照舊。
+- `gmap.js`：轉接層，介面照 MapLibre（addSource/addLayer/setData/easeTo/fitBounds/Marker…），底下用 google.maps。
+  - 縮放：Google = MapLibre + 1。運算式只做 ui.js 用到的（get/case/match/interpolate/step/in…）。
+  - 點狀圖層只畫畫面附近（YouBike 上千站），群集用固定網格。標記：有 Map ID 用 AdvancedMarker，沒有用 OverlayView。
+  - 點 Google 店家 → `poiclick` → 自己的資料卡（不跳 Google 小視窗）。
+- Google 要啟用：**Maps JavaScript API、Places API (New)、Routes API**（舊版 Directions/Places Service 2025/3 起新專案不能開）。Route 類別目前只在 `v=beta`。
+- 計費控制：搜尋只抓基本欄位（Pro）；評分、營業時間、電話、照片只在開資料卡時抓（Enterprise）；沒有自動完成（只在按搜尋時查）。
+- 路線頁：上方固定五種方式 大眾運輸｜開車｜機車｜自行車｜步行（記住上次選的）。
+  - 開車／機車（TWO_WHEELER）／步行：Google Routes，轉成 OSRM 格式給原本的導航程式（core.js `fromGoogleRoute`）。
+  - 自行車：OSRM。大眾運輸：Google 方案列表 → 步驟（哪站上、幾站、哪站下）；公車段用 TDX StopOfRoute 找站＋方向，再查即時到站。
+  - 沒 Google：大眾運輸、機車分頁顯示「要 Google 金鑰」，不拿汽車路線冒充機車。
+- 搜尋框只有一個：打公車號碼（307、紅31…）走 TDX 公車；其他走 Google（或 Nominatim）→ 結果紅點＋清單 → 地點資料卡 → 路線。「返回」會回上一頁（S.backFn）。
+- 路況：Google 模式用 Google 自己的 TrafficLayer（免費），不用 TomTom。
+- 街景：StreetViewPanorama 全螢幕（#sv）。
+
+## 14. 測速照相（2026/10/4 下午）
+- 資料：警政署 data.gov.tw 7320（全國測速執法設置點）＋13940（國道固定式），`.github/workflows/speedcam.yml` 每天 03:17 跑 `scripts/speedcam.py` → `data/speedcam.json`（同網站，不用中繼站）。2026/10/4 首次跑出 1893 處（7320）。
+- 導航（開車、機車）時把路線附近 30 公尺內的測速點投影到路線上，沿路線前方 600 公尺內顯示限速標誌、500 公尺語音、超速閃紅並再提醒一次。
+- 紅燈秒數：做不到（台灣沒有公開即時號誌資料；高德是用大量使用者軌跡推算，數位部 2026/4/23 說明）。
+
+### 測試
+- `e2e_google.py` 用 `gstub.js`（假 google.maps）跑 Google 模式：載入參數、深淺色、衛星、按搜尋才查、資料卡、街景、五種路線、轉乘步驟、TDX 即時、測速提醒、點店家、公車號碼搜尋。

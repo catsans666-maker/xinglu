@@ -43,9 +43,16 @@ def csv_urls(ds):
         return []
     txt = decode(meta)
     dbg.append(f'dataset {ds} meta: {txt[:1500]}')
+    good = []
+    try:  # 正常情況：照 API 給的下載網址
+        for d in json.loads(txt).get('result', {}).get('distribution', []):
+            u = d.get('resourceDownloadUrl') or ''
+            if u and str(d.get('resourceFormat', '')).upper() in ('CSV', ''):
+                good.append(u)
+    except ValueError:
+        pass
     urls = re.findall(r'https?://[^"\s\\]+', txt.replace('\\/', '/'))
-    # 先挑格式是 CSV 的下載網址
-    good = [u for u in urls if re.search(r'csv|download|resource', u, re.I) and 'data.gov.tw/dataset' not in u]
+    good += [u for u in urls if re.search(r'csv|download|resource', u, re.I) and 'data.gov.tw/dataset' not in u]
     return list(dict.fromkeys(good))
 
 def parse(text, src):

@@ -128,6 +128,13 @@
     ],
   };
   let hasGlyphs = true, map;
+  // ---------- Google 地圖（有金鑰就用 Google；沒有就用開放地圖） ----------
+  const gCfg = () => ({ key: (LS.getItem('g.key') || window.XINGLU_GOOGLE?.key || '').trim(), mapId: (LS.getItem('g.mapId') || window.XINGLU_GOOGLE?.mapId || '').trim() });
+  let G = false;                        // Google 地圖載入成功才會變 true
+  const MK = () => (G ? GM.Marker : maplibregl.Marker);
+  const GBASES = { roadmap: { name: '地圖', note: 'Google 地圖・店家、餐廳、便利商店' }, hybrid: { name: '衛星', note: 'Google 衛星空照＋路名' } };
+  let gBase = GBASES[LS.getItem('g.base')] ? LS.getItem('g.base') : 'roadmap';
+  let gTraffic = null;                  // google.maps.TrafficLayer
   // 沒選過底圖：有 TomTom 就用 TomTom（最新），沒有就用國土測繪
   let basemap = BASEMAPS[LS.getItem('basemap')] ? LS.getItem('basemap') : (hasTT() ? 'tomtom' : 'emap');
   // 「旋轉或深色時自動換向量圖」：國土測繪是圖片地圖，地圖一轉字就跟著轉、深色只能反轉顏色；向量圖沒有這兩個問題
@@ -203,6 +210,13 @@
     map.addLayer({ id: 'bm-tomtom', type: 'raster', source: 'ttmap', layout: { visibility: wasVisible ? 'visible' : 'none' } }, 'bm-emap');
   }
   function applyBase() {
+    if (G) {
+      if (map) map._g.setMapTypeId(gBase);
+      S.effBase = gBase;
+      applyTraffic(); updAttr();
+      if (!$('#layerPop').hidden) renderLayerPop();
+      return;
+    }
     if (!map || !map.getLayer('bm-emap')) return;
     ensureTomTomBase();
     const eff = effBase();
@@ -218,17 +232,20 @@
   }
   // 地圖轉超過 3° 就換向量圖，轉回 0.5° 以內才換回（避免在邊界來回閃）
   function onRotateBase() {
+    if (G) return;
     const b = Math.abs(map.getBearing());
     const want = S.rotVec ? b > 0.5 : b > 3;
     if (want !== S.rotVec) { S.rotVec = want; applyBase(); }
   }
   function setBasemap(k) {
+    if (G) { if (!GBASES[k]) return; gBase = k; LS.setItem('g.base', k); applyBase(); renderLayerPop(); return; }
     if (!BASEMAPS[k]) return;
     basemap = k; LS.setItem('basemap', k);
     applyBase();
     renderLayerPop();
   }
   function updAttr() {
+    if (G) { $('#attr').textContent = 'TDX'; return; }   // Google 地圖自己會在角落標示來源
     const parts = [BASEMAPS[S.effBase || basemap].attr];
     if (S.traffic && map?.getLayer('traffic')) parts.push('© TomTom');
     parts.push('TDX');
@@ -268,7 +285,7 @@
     });
   }
   function applyPalette() {
-    if (!map) return;
+    if (!map || G) return;
     const dark = isDark();
     const P = dark ? PAL.dark : PAL.light;
     const set = (id, k, v) => { try { if (map.getLayer(id)) map.setPaintProperty(id, k, v); } catch { /* 該圖層沒有這個屬性 */ } };
@@ -286,7 +303,7 @@
 
   // ---------- 即時路況（TomTom Traffic Flow，綠＝順、黃＝慢、紅＝塞） ----------
   const ttKey = () => LS.getItem('tt.key') || '';
-  const trafficOk = () => !!(ttKey() || relayUrl());
+  const trafficOk = () => G || !!(ttKey() || relayUrl());
   // 沒選過就預設開（有金鑰或中繼站時）
   S.traffic = LS.getItem('traffic') == null ? trafficOk() : LS.getItem('traffic') === '1';
   const trafficUrl = () => (ttKey() ? C.tomtomFlowUrl(ttKey(), isDark()) : C.tomtomRelayUrl(relayUrl(), isDark()));
@@ -303,6 +320,12 @@
     return true;
   }
   function applyTraffic() {
+    if (G) {
+      if (!map) return;
+      if (S.traffic && !gTraffic) gTraffic = new google.maps.TrafficLayer({ autoRefresh: true });
+      if (gTraffic) gTraffic.setMap(S.traffic ? map._g : null);
+      return;
+    }
     if (!map || !map.getLayer('route-case')) return;
     if (S.traffic && ensureTrafficLayer()) map.setLayoutProperty('traffic', 'visibility', 'visible');
     else if (map.getLayer('traffic')) map.setLayoutProperty('traffic', 'visibility', 'none');
@@ -328,24 +351,45 @@
     });
   }
 
+  function bindMapCommon() {
+    map.on('load', onMapLoad);
+    map.on('dragstart', () => {
+      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; }
+      else if (S.track !== 'off') setTrack('off');
+    });
+    map.on('rotate', () => { updCompass(); onRotateBase(); });
+    map.once('load', firstLocate);
+  }
+  async function initGoogle(gc) {
+    await GM.load(gc.key, { onAuthFail: () => { toast('Google 金鑰被拒：檢查網域限制、帳單、有沒有開 Maps JavaScript API'); logExt('Google 地圖', 'ERR', '金鑰驗證失敗'); } });
+    logExt('Google 地圖程式', 200);
+    G = true;
+    S.traffic = LS.getItem('traffic') !== '0';   // Google 路況免費，預設開
+    map = new GM.Map({
+      container: 'map', center: [120.95, 23.75], zoom: isWide() ? 6.8 : 6.0,
+      maxBounds: [[115.5, 20.5], [124.5, 27.3]], mapId: gc.mapId || 'DEMO_MAP_ID', dark: isDark(), mapTypeId: gBase,
+    });
+    document.body.classList.add('gmap');
+    window.__xlmap = map;   // 方便除錯
+    bindMapCommon();
+    map.on('poiclick', (e) => openPlaceId(e.placeId));
+  }
   async function initMap() {
+    const gc = gCfg();
+    if (gc.key && window.GM) {
+      try { await initGoogle(gc); return; } catch (e) { G = false; logExt('Google 地圖', 'ERR', String(e.message || e)); toast((e.message || 'Google 地圖載入失敗') + '，先用開放地圖'); }
+    }
     const style = await loadStyle();
     map = new maplibregl.Map({
       container: 'map', style, center: [120.95, 23.75], zoom: isWide() ? 6.8 : 6.0,
       maxBounds: [[115.5, 20.5], [124.5, 27.3]], attributionControl: false, pitchWithRotate: true,
       localIdeographFontFamily: '"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif',
     });
-    map.on('load', onMapLoad);
-    map.on('dragstart', () => {
-      if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; }
-      else if (S.track !== 'off') setTrack('off');
-    });
+    bindMapCommon();
     map.on('rotatestart', (e) => { if (e.originalEvent && !S.nav?.active && S.track === 'heading') setTrack('off'); });
-    map.on('rotate', () => { updCompass(); onRotateBase(); });
     map.on('error', (e) => {
       if (e.sourceId === 'traffic' && !S.ttErr) { S.ttErr = true; toast('即時路況載入失敗：TomTom 金鑰錯誤或額度用完'); logExt('TomTom 路況圖磚', 'ERR', String(e.error?.message || '')); }
     });
-    map.once('load', firstLocate);
   }
   const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 
@@ -372,6 +416,7 @@
     const jobs = [...metroColors].map((c) => addSvgImage('metro-' + c, badge('round', c, GLYPH.train(c))));
     jobs.push(addSvgImage('tra', badge('square', '#1b3a8c', GLYPH.train('#1b3a8c'))));
     jobs.push(addSvgImage('thsr', badge('square', '#e8730c', GLYPH.hsr('#e8730c'))));
+    CAM_ICONS.forEach((v) => jobs.push(addSvgImage('cam-' + v, `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="21" r="17.5" fill="rgba(0,0,0,.25)"/><circle cx="20" cy="20" r="16.5" fill="#fff" stroke="#e60012" stroke-width="5"/>${v ? `<text x="20" y="25.5" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="${v >= 100 ? 13 : 15}" fill="#111">${v}</text>` : '<rect x="12" y="15" width="16" height="11" rx="2" fill="#111"/><circle cx="20" cy="20.5" r="3.4" fill="#fff"/><circle cx="20" cy="20.5" r="1.8" fill="#111"/>'}</svg>`)));
     [['ok', '#34c759'], ['low', '#ff9500'], ['empty', '#ff3b30'], ['na', '#8e8e93']].forEach(([k, c]) => jobs.push(addSvgImage('bike-' + k, badge('round', c, GLYPH.bike()))));
     return Promise.all(jobs);
   }
@@ -384,7 +429,7 @@
 
     map.addSource('route', { type: 'geojson', data: emptyFC() });
     map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14] } });
-    map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#0a84ff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 16, 9] } });
+    map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['coalesce', ['get', 'color'], '#0a84ff'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 16, 9] } });
 
     map.addSource('metro-lines', { type: 'geojson', data: emptyFC() });
     map.addLayer({ id: 'metro-lines', type: 'line', source: 'metro-lines', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 2, 14, 5] } });
@@ -414,12 +459,17 @@
       'circle-color': ['match', ['get', 'level'], 'now', '#ff3b30', 'soon', '#ff9500', 'later', '#30b0c7', '#ffffff'],
       'circle-stroke-color': ['match', ['get', 'level'], 'none', '#30b0c7', '#ffffff'], 'circle-stroke-width': 2 } });
 
+    // 測速照相（限速標誌）與搜尋結果紅點
+    map.addSource('speedcam', { type: 'geojson', data: emptyFC() });
+    map.addLayer({ id: 'speedcam', type: 'symbol', source: 'speedcam', minzoom: 12.5, layout: { 'icon-image': ['concat', 'cam-', ['to-string', ['get', 'icon']]], 'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 0.55, 16, 0.85], 'icon-allow-overlap': true, visibility: SC.on ? 'visible' : 'none' } });
+    map.addSource('search', { type: 'geojson', data: emptyFC() });
+    map.addLayer({ id: 'search-pt', type: 'circle', source: 'search', paint: { 'circle-radius': 7, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
     if (hasGlyphs) {
       const font = ['Noto Sans Regular'];
       const lab = (id, src, minzoom, dy) => map.addLayer({ id, type: 'symbol', source: src, minzoom,
         layout: { 'text-field': ['get', 'name'], 'text-font': font, 'text-size': 12, 'text-offset': [0, dy], 'text-anchor': 'top', 'text-optional': true, 'text-max-width': 8 },
         paint: { 'text-color': '#1c1c1e', 'text-halo-color': '#fff', 'text-halo-width': 1.8 } });
-      lab('metro-st-label', 'metro-st', 13.5, 1.3); lab('tra-st-label', 'tra-st', 11, 1.4); lab('thsr-st-label', 'thsr-st', 8, 1.5);
+      if (!G) { lab('metro-st-label', 'metro-st', 13.5, 1.3); lab('tra-st-label', 'tra-st', 11, 1.4); lab('thsr-st-label', 'thsr-st', 8, 1.5); }
       map.addLayer({ id: 'bike-cluster-n', type: 'symbol', source: 'bike', filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': font, 'text-size': 11, 'text-allow-overlap': true }, paint: { 'text-color': '#5c4400' } });
     }
     // 預設關掉的圖層（YouBike）先藏起來
@@ -427,6 +477,7 @@
     setFocus(S.focus);   // 預設不畫任何路線
     applyBase();
     applyTraffic();
+    applySpeedcam();
     bindMapEvents();
     loadCounties();
   }
@@ -486,7 +537,7 @@
     map.on('moveend', () => { if (!S.nav?.active && map.getZoom() >= 10.5 && S.track === 'off') autoCounty(map.getCenter().toArray()); });
     map.on('click', (e) => {
       $('#layerPop').hidden = true;
-      const order = ['bus-st', 'bike-pt', 'bike-cluster', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines'];
+      const order = ['search-pt', 'bus-st', 'bike-pt', 'bike-cluster', 'speedcam', 'thsr-st', 'tra-st', 'metro-st', 'metro-lines'];
       const hits = map.queryRenderedFeatures(e.point, { layers: order.filter((l) => map.getLayer(l)) });
       if (hits.length) {
         hits.sort((a, b) => order.indexOf(a.layer.id) - order.indexOf(b.layer.id));
@@ -496,6 +547,8 @@
           return;
         }
         if (f.layer.id === 'metro-lines') return openLine(f.properties.op, f.properties.line);   // 點捷運線＝選這條線
+        if (f.layer.id === 'search-pt') { const r = S.searchRows?.[f.properties.i]; if (r) openPlace(r); return; }
+        if (f.layer.id === 'speedcam') { toast(`測速照相${f.properties.limit ? `・限速 ${f.properties.limit}` : ''}${f.properties.addr ? '・' + f.properties.addr : ''}`); return; }
         return openFeature(f.layer.id, f.properties, f.geometry.coordinates);
       }
     });
@@ -701,9 +754,18 @@
     return '';
   }
   function renderLayerPop() {
+    if (G) {
+      $('#layerPop').innerHTML = Object.keys(LAYER_NAMES).map((k) => `<button class="lrow" data-k="${k}" role="switch" aria-checked="${S.layers[k]}"><i class="dot d-${k}"></i><span class="grow">${LAYER_NAMES[k]}</span>${statusBadge(k)}<span class="sw ${S.layers[k] ? 'on' : ''}"></span></button>`).join('')
+        + `<button class="lrow" data-traffic="1" role="switch" aria-checked="${S.traffic}"><i class="dot d-traffic"></i><span class="grow">即時路況<small class="lnote">Google・綠順、黃慢、紅塞</small></span><span class="sw ${S.traffic ? 'on' : ''}"></span></button>`
+        + speedcamRow()
+        + '<div class="lhead">底圖</div>'
+        + Object.entries(GBASES).map(([k, b]) => `<button class="lrow" data-bm="${k}" role="radio" aria-checked="${k === gBase}"><span class="grow">${b.name}<small class="lnote">${b.note}</small></span>${k === gBase ? '<span class="chk">✓</span>' : ''}</button>`).join('');
+      return;
+    }
     const auto = S.effBase === 'vector' && basemap !== 'vector' ? `暫時改用向量地圖（${isDark() ? '深色模式' : '地圖旋轉中'}）` : '';
     $('#layerPop').innerHTML = Object.keys(LAYER_NAMES).map((k) => `<button class="lrow" data-k="${k}" role="switch" aria-checked="${S.layers[k]}"><i class="dot d-${k}"></i><span class="grow">${LAYER_NAMES[k]}</span>${statusBadge(k)}<span class="sw ${S.layers[k] ? 'on' : ''}"></span></button>`).join('')
       + `<button class="lrow" data-traffic="1" role="switch" aria-checked="${S.traffic}"><i class="dot d-traffic"></i><span class="grow">即時路況<small class="lnote">${trafficOk() ? 'TomTom・只標出變慢的路：黃慢、紅塞' : '要先在設定填 TomTom 金鑰'}</small></span><span class="sw ${S.traffic ? 'on' : ''}"></span></button>`
+      + speedcamRow()
       + '<div class="lhead">底圖</div>'
       + Object.entries(BASEMAPS).filter(([k]) => (k !== 'vector' || S.vecIds.length) && (k !== 'tomtom' || hasTT())).map(([k, b]) => `<button class="lrow" data-bm="${k}" role="radio" aria-checked="${k === basemap}"><span class="grow">${b.name}<small class="lnote">${k === basemap && auto ? auto : b.note}</small></span>${k === basemap ? '<span class="chk">✓</span>' : ''}</button>`).join('')
       + (S.vecIds.length ? `<button class="lrow" data-auto="1" role="switch" aria-checked="${autoVec}"><span class="grow">旋轉或深色時自動換向量圖<small class="lnote">圖片地圖一轉字就倒，深色只能反轉顏色</small></span><span class="sw ${autoVec ? 'on' : ''}"></span></button>` : '');
@@ -783,6 +845,7 @@
   function setBody(html, view) {
     stopTimers();
     S.view = view;
+    S.backFn = null;   // 「返回」預設回首頁；要回上一頁的畫面自己再設
     $('#sheetBody').innerHTML = html;
     $('#sheetBody').scrollTop = 0;
     if (sheet().dataset.d === 'peek' && view !== 'nav' && view !== 'home') setDetent('half');
@@ -823,7 +886,7 @@
       <div class="sec"><h3>要看哪種交通？</h3><div class="modes" id="modeGrid"></div></div>
       <div class="sec"><h3>我的地點</h3><div id="myPlaces"></div></div>
       ${!tdx.ready() ? '<div class="sec"><div class="list"><button class="item" data-act="settings"><span class="grow"><span class="t1">設定 TDX 金鑰</span><div class="t2">沒有金鑰就看不到即時交通資料</div></span><span class="muted">›</span></button></div></div>' : ''}
-      <p class="fine" style="margin-top:14px">上方搜尋列可查地點（導航）、公車路線、捷運站名。</p>`, 'home');
+      <p class="fine" style="margin-top:14px">上方搜尋可找地點、店家、地址，或直接打公車號碼（例如 307）。</p>`, 'home');
     renderHomeStatus();
     renderMyPlaces();
   }
@@ -1245,10 +1308,10 @@
   // ======================================================
   function setQMode(m) {
     S.qMode = m;
-    document.querySelectorAll('#qMode button').forEach((b) => b.classList.toggle('on', b.dataset.m === m));
-    $('#q').placeholder = m === 'bus' ? (S.county ? `${S.county.name}公車路線，如 307` : '定位後可查公車路線')
-      : m === 'metro' ? (S.county ? `${S.county.name}捷運站名（空白＝附近的站）` : '定位後可查捷運站') : '搜尋地點、地址、門牌';
+    $('#q').placeholder = G ? '搜尋地點、店家、地址或公車號碼' : '搜尋地點、地址或公車號碼';
   }
+  // 公車號碼：307、紅31、藍1、小1、F612、幹線 1、9025 …（「307公車」也算）
+  const isBusQuery = (q) => /^((紅|藍|綠|橘|棕|黃|小|內科|市民|幹線|跳)\s*)?[A-Za-z]?\d{1,4}[A-Za-z]?(副|區|延|直達車|區間車)?(公車|路)?$/.test(q.replace(/\s+/g, ''));
   // 捷運：搜站名；不打字就列出附近的站，依距離由近到遠
   async function searchMetro(q) {
     const head = (t) => `${backBtn}<div class="ph"><div class="tag"><i class="dot d-metro"></i>捷運</div><h2>${esc(t)}</h2></div>`;
@@ -1330,10 +1393,10 @@
   }
   async function runSearch() {
     const q = $('#q').value.trim();
-    if (!q && S.qMode !== 'metro') return;
+    if (!q) return;
     $('#q').blur();
-    if (S.qMode === 'bus') return searchBus(q, S.busScope || 'City');
-    if (S.qMode === 'metro') return searchMetro(q);
+    if (isBusQuery(q) && tdx.ready() && S.county) return searchBus(q.replace(/(公車|路)$/, '').replace(/\s+/g, ''), S.busScope || 'City');
+    if (G) return runGoogleSearch(q);
     setBody(`${backBtn}<div class="ph"><div class="tag">地點</div><h2>${esc(q)}</h2></div><div id="rBody">${loading}</div>`, 'search');
     try {
       const { rows, refLbl } = await searchPlaces(q);
@@ -1356,11 +1419,28 @@
           const L = label(r);
           return `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(L.nm)}${L.kind ? ` <span class="kind">${L.kind}</span>` : ''}</span><div class="t2">${esc(L.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`;
         }).join('')}</div><p class="fine">依離${refLbl}的距離，由近到遠・地點資料：OpenStreetMap Nominatim</p>`;
-      $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => {
-        const r = rows[+b.dataset.i]; const L = label(r);
-        previewRoute({ name: L.poi ? L.nm : L.exact ? L.addr : L.nm, p: [+r.lon, +r.lat], addr: L.addr });
-      }));
+      const places = rows.map((r) => { const L = label(r); return { name: L.poi ? L.nm : L.exact ? L.addr : L.nm, p: [+r.lon, +r.lat], addr: L.addr, type: L.kind }; });
+      showSearchPins(places);
+      S.searchBack = () => runSearch();
+      $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(places[+b.dataset.i])));
     } catch (e) { $('#rBody').innerHTML = errBox(e); }
+  }
+  async function runGoogleSearch(q) {
+    setBody(`${backBtn}<div class="ph"><div class="tag">搜尋</div><h2>${esc(q)}</h2></div><div id="rBody">${loading}</div>`, 'search');
+    try {
+      const { rows, refLbl } = S.lastG && S.lastG.q === q ? S.lastG : { q, ...(await searchGoogle(q)) };
+      S.lastG = { q, rows, refLbl };
+      if (!$('#rBody')) return;
+      if (!rows.length) { $('#rBody').innerHTML = '<p class="muted">找不到，換個寫法試試（例如加上縣市或路名）。</p>'; return; }
+      showSearchPins(rows);
+      S.searchBack = () => runGoogleSearch(q);
+      if (rows.length === 1) return openPlace(rows[0]);
+      const pts = rows.map((r) => r.p);
+      const bb = bboxOf({ coordinates: pts });
+      if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 700, maxZoom: 16 });
+      $('#rBody').innerHTML = `<div class="list">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
+      $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(rows[+b.dataset.i])));
+    } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗（檢查是否啟用 Places API (New)）')); }
   }
 
   async function searchBus(q, scopeKind) {
@@ -1522,20 +1602,309 @@
   }
 
   // ======================================================
-  // 導航（OSRM：開車／自行車／步行）
+  // 地點資料卡（像 Google 地圖：搜尋或點店家 → 資料卡 → 路線）
+  // ======================================================
+  const PLACE_FIELDS = ['id', 'displayName', 'formattedAddress', 'location', 'primaryTypeDisplayName'];
+  // 評分、營業時間、電話、照片是 Google 計價較高的欄位：只有打開資料卡才抓
+  const DETAIL_FIELDS = ['rating', 'userRatingCount', 'regularOpeningHours', 'utcOffsetMinutes', 'nationalPhoneNumber', 'websiteURI', 'googleMapsURI', 'photos', 'businessStatus'];
+  const cleanAddr = (a) => String(a || '').replace(/^\d{3,6}\s*/, '').replace(/^(台灣|臺灣)/, '').trim();
+  const placeObj = (pl) => ({ id: pl.id, name: pl.displayName || '', addr: cleanAddr(pl.formattedAddress), p: C.llOf(pl.location), type: pl.primaryTypeDisplayName || '', g: pl });
+  async function openPlaceId(id) {
+    if (!G || !id) return;
+    const { Place } = await google.maps.importLibrary('places');
+    openPlace({ id, name: '', addr: '', p: null, g: new Place({ id, requestedLanguage: 'zh-TW' }) });
+  }
+  const svgI = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICO_SV = svgI('<circle cx="12" cy="5" r="2.5"/><path d="M9 21l1-7-2-1 1.5-4.5h5L16 13l-2 1 1 7M4 18c0 1.7 3.6 3 8 3s8-1.3 8-3"/>');
+  function openPlace(d) {
+    S.place = d;
+    setFocus(null);
+    setDetent('half');
+    const draw = () => {
+      if (S.place !== d) return;
+      const dest = d.p ? { name: d.name, p: d.p, addr: d.addr } : null;
+      S.saveDest = dest; S.panelDest = dest;
+      const g = d.full ? d.g : null;
+      const meta = [];
+      if (g?.rating) meta.push(`<span class="star">${g.rating.toFixed(1)} ★</span><span>(${(g.userRatingCount || 0).toLocaleString()})</span>`);
+      if (d.type) meta.push(`<span>${esc(d.type)}</span>`);
+      if (d.openNow != null) meta.push(d.openNow ? '<span class="open">營業中</span>' : '<span class="shut">休息中</span>');
+      else if (g?.businessStatus === 'CLOSED_TEMPORARILY') meta.push('<span class="shut">暫停營業</span>');
+      else if (g?.businessStatus === 'CLOSED_PERMANENTLY') meta.push('<span class="shut">永久歇業</span>');
+      if (d.p && S.me) meta.push(`<span>${C.fmtDist(C.dist(S.me, d.p))}</span>`);
+      const wk = g?.regularOpeningHours?.weekdayDescriptions || [];
+      const today = wk[(new Date().getDay() + 6) % 7];
+      let photo = '';
+      try { if (g?.photos?.length) photo = `<img class="pphoto" alt="" loading="lazy" src="${esc(g.photos[0].getURI({ maxHeight: 400 }))}">`; } catch { /* 沒照片 */ }
+      setBody(`${backBtn}<div class="ph"><div class="tag">${esc(d.type || '地點')}</div><h2>${esc(d.name || '載入中…')}</h2>${d.addr ? `<small>${esc(d.addr)}</small>` : ''}
+        ${meta.length ? `<div class="pmeta">${meta.join('<span>・</span>')}</div>` : ''}
+        <div class="acts">${dest ? '<button class="btn go" id="pcRoute">路線</button>' : ''}${G && dest ? `<button class="btn" id="pcSv">${ICO_SV}街景</button>` : ''}${dest ? saveBtn : ''}</div></div>
+        <div id="saveBox" hidden></div>${photo}
+        <div class="sec" id="pcMore">${d.full || !G || !d.g ? '' : loading}
+          ${today || g?.nationalPhoneNumber || g?.websiteURI || g?.googleMapsURI ? `<div class="list">
+            ${today ? `<details class="item" style="display:block"><summary class="t1" style="cursor:pointer">今天 ${esc(today.replace(/^[^:：]+[:：]\s*/, ''))}</summary><div class="t2" style="margin-top:6px;line-height:1.7">${wk.map(esc).join('<br>')}</div></details>` : ''}
+            ${g?.nationalPhoneNumber ? `<a class="item" href="tel:${esc(g.nationalPhoneNumber.replace(/\s/g, ''))}"><span class="grow t1">${esc(g.nationalPhoneNumber)}</span><span class="muted">撥打</span></a>` : ''}
+            ${g?.websiteURI ? `<a class="item" href="${esc(g.websiteURI)}" target="_blank" rel="noopener"><span class="grow t1" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.websiteURI.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</span><span class="muted">網站</span></a>` : ''}
+            ${g?.googleMapsURI ? `<a class="item" href="${esc(g.googleMapsURI)}" target="_blank" rel="noopener"><span class="grow t1">在 Google 地圖看評論、照片</span><span class="muted">›</span></a>` : ''}
+          </div>` : ''}</div>`, 'place');
+      if (S.searchBack) S.backFn = S.searchBack;
+      $('#pcRoute')?.addEventListener('click', () => previewRoute(dest));
+      $('#pcSv')?.addEventListener('click', () => openStreetView(d.p));
+    };
+    draw();
+    if (d.p) { setDestPin(d.p); map.easeTo({ center: d.p, zoom: Math.max(map.getZoom(), 16), padding: isWide() ? { left: 380 } : { bottom: sheetHeight() } }); }
+    if (G && d.g && !d.full) {
+      (async () => {
+        try {
+          await d.g.fetchFields({ fields: [...PLACE_FIELDS, ...DETAIL_FIELDS] });
+          logExt('Google 地點資料', 200);
+          Object.assign(d, placeObj(d.g), { full: true });
+          try { d.openNow = d.g.regularOpeningHours ? await d.g.isOpen() : null; } catch { d.openNow = null; }
+          if (S.place !== d) return;
+          draw();
+          if (d.p) { setDestPin(d.p); map.easeTo({ center: d.p, zoom: Math.max(map.getZoom(), 16) }); }
+        } catch (e) {
+          logExt('Google 地點資料', 'ERR', String(e.message || e));
+          d.full = true;
+          if (S.place === d) { draw(); if ($('#pcMore')) $('#pcMore').insertAdjacentHTML('afterbegin', errBox(new Error('地點詳細資料載入失敗（Google 額度或金鑰）'))); }
+        }
+      })();
+    }
+  }
+
+  // ---------- 街景（Google） ----------
+  async function openStreetView(p) {
+    if (!G || !p) return;
+    try {
+      const { StreetViewService, StreetViewPanorama } = await google.maps.importLibrary('streetView');
+      const svc = new StreetViewService();
+      const r = await svc.getPanorama({ location: { lat: p[1], lng: p[0] }, radius: 80, preference: 'nearest', source: 'outdoor' });
+      $('#sv').hidden = false;
+      const loc = r.data.location.latLng;
+      const heading = google.maps.geometry ? google.maps.geometry.spherical.computeHeading(loc, new google.maps.LatLng(p[1], p[0])) : 0;
+      S.pano = new StreetViewPanorama($('#svPano'), { pano: r.data.location.pano, pov: { heading, pitch: 0 }, addressControl: true, fullscreenControl: false, motionTracking: false, motionTrackingControl: false, zoomControl: false, panControl: false });
+      logExt('Google 街景', 200);
+    } catch (e) {
+      logExt('Google 街景', 'ERR', String(e.message || e));
+      toast('這裡附近沒有街景');
+    }
+  }
+
+  // ---------- Google 地點搜尋（按「搜尋」才查，不會邊打邊查） ----------
+  async function searchGoogle(q) {
+    const { Place } = await google.maps.importLibrary('places');
+    const me = await quickPos();
+    const ref = me || map.getCenter().toArray();
+    const { places } = await Place.searchByText({
+      textQuery: q, fields: PLACE_FIELDS, language: 'zh-TW', region: 'tw', maxResultCount: 15,
+      locationBias: { center: { lat: ref[1], lng: ref[0] }, radius: 30000 },
+    });
+    logExt('Google 地點搜尋', 200);
+    const rows = (places || []).map(placeObj).filter((r) => r.p);
+    rows.forEach((r) => { r._d = C.dist(ref, r.p); });
+    return { rows, refLbl: me ? '你' : '地圖中心' };
+  }
+  // 搜尋結果插在地圖上（紅點），點了開資料卡
+  function showSearchPins(rows) {
+    if (!map.getSource('search')) return;
+    map.getSource('search').setData({ type: 'FeatureCollection', features: rows.map((r, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: r.p }, properties: { i } })) });
+    S.searchRows = rows;
+  }
+  function clearSearchPins() { if (map?.getSource('search')) map.getSource('search').setData(emptyFC()); S.searchRows = null; S.searchBack = null; }
+
+  // ---------- 測速照相 ----------
+  //   資料：警政署「測速執法設置點」＋國道固定式測速，GitHub 每天自動更新成 data/speedcam.json
+  const CAM_ICONS = [0, 30, 40, 50, 60, 70, 80, 90, 100, 110];   // 有畫好的限速標誌，其他速限用通用相機圖示
+  const SC = { list: null, loading: null, on: LS.getItem('speedcam') !== '0', near: null };
+  const SPEEDCAM_URL = /github\.io$/.test(location.hostname) ? 'data/speedcam.json' : 'https://catsans666-maker.github.io/xinglu/data/speedcam.json';
+  function loadSpeedcam() {
+    if (SC.list) return Promise.resolve(SC.list);
+    if (!SC.loading) {
+      SC.loading = getJSON(SPEEDCAM_URL, '測速照相資料').then((j) => {
+        SC.list = (j.cams || []).map((c) => ({ p: [c[0], c[1]], limit: c[2] || 0, dir: c[3] || '', addr: c[4] || '' }));
+        SC.updated = j.updated;
+        if (map?.getSource('speedcam')) map.getSource('speedcam').setData({ type: 'FeatureCollection', features: SC.list.map((c) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: c.p }, properties: { limit: c.limit, icon: CAM_ICONS.includes(c.limit) ? c.limit : 0, addr: c.addr } })) });
+        if (!$('#layerPop').hidden) renderLayerPop();
+        return SC.list;
+      }).catch((e) => { SC.loading = null; SC.err = true; throw e; });
+    }
+    return SC.loading;
+  }
+  function speedcamRow() {
+    const note = SC.err ? '資料還沒準備好' : SC.list ? `${SC.list.length.toLocaleString()} 處・${SC.updated || ''} 更新・導航時語音提醒` : '導航時前方 500 公尺語音提醒';
+    return `<button class="lrow" data-cam="1" role="switch" aria-checked="${SC.on}"><i class="dot" style="background:#e60012"></i><span class="grow">測速照相<small class="lnote">${note}</small></span><span class="sw ${SC.on ? 'on' : ''}"></span></button>`;
+  }
+  function applySpeedcam() {
+    if (!map?.getLayer('speedcam')) return;
+    map.setLayoutProperty('speedcam', 'visibility', SC.on ? 'visible' : 'none');
+    if (SC.on) loadSpeedcam().catch(() => toast('測速照相資料載入失敗'));
+  }
+  function toggleSpeedcam() {
+    SC.on = !SC.on; LS.setItem('speedcam', SC.on ? '1' : '0');
+    applySpeedcam(); renderLayerPop();
+    if (!SC.on) $('#hudCam').hidden = true;
+  }
+  // 導航中每次定位更新：找「沿著路線往前 600 公尺內」的測速點（轉彎後的也算）
+  function routeCams(N) {
+    if (N.camFor === N.route) return N.cams;
+    const co = N.route.coords;
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    co.forEach(([x, y]) => { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); });
+    const m = 0.001;
+    N.cams = SC.list.filter((c) => c.p[0] > w - m && c.p[0] < e + m && c.p[1] > s - m && c.p[1] < n + m)
+      .map((c) => ({ c, pr: C.projectOnLine(c.p, co) })).filter((x) => x.pr.d < 30).map((x) => ({ c: x.c, s: x.pr.s }));
+    N.camFor = N.route;
+    return N.cams;
+  }
+  function checkSpeedcam(p, brg, kmh) {
+    const N = S.nav;
+    const box = $('#hudCam');
+    if (!SC.on || !SC.list || !N || !['car', 'scooter'].includes(N.mode)) { box.hidden = true; return; }
+    const cams = routeCams(N);
+    const me = C.projectOnLine(p, N.route.coords).s;
+    let best = null;
+    cams.forEach((x) => { const d = x.s - me; if (d > -10 && d <= 600 && (!best || d < best.d)) best = { c: x.c, d }; });
+    if (!best || best.d < 10) { box.hidden = true; return; }
+    const { c, d } = best;
+    box.hidden = false;
+    $('#hudCamLim').textContent = c.limit || '!';
+    $('#hudCamD').textContent = `前方 ${C.fmtDist(d)}`;
+    const over = c.limit && kmh > c.limit;
+    box.classList.toggle('over', !!over);
+    const key = c.p.join(',');
+    N.camSaid = N.camSaid || {};
+    if (d <= 500 && !N.camSaid[key]) { N.camSaid[key] = 1; speak(`前方${C.fmtDist(d)}有測速照相${c.limit ? `，限速${c.limit}` : ''}`); }
+    if (over && d <= 250 && !N.camSaid[key + 'o']) { N.camSaid[key + 'o'] = 1; speak(`超速，限速${c.limit}`); }
+  }
+
+  // ---------- Google 路線（Routes：開車、機車、步行、大眾運輸） ----------
+  const GMODE = { car: 'DRIVING', scooter: 'TWO_WHEELER', foot: 'WALKING', transit: 'TRANSIT' };
+  async function gRoute(from, to, mode) {
+    const { Route } = await google.maps.importLibrary('routes');
+    const req = {
+      origin: { lat: from[1], lng: from[0] }, destination: { lat: to[1], lng: to[0] }, travelMode: GMODE[mode],
+      language: 'zh-TW', region: 'tw', fields: ['path', 'legs', 'distanceMeters', 'durationMillis', 'localizedValues'],
+    };
+    if (mode === 'car' || mode === 'scooter') req.routingPreference = 'TRAFFIC_AWARE';
+    if (mode === 'transit') { req.computeAlternativeRoutes = true; req.departureTime = new Date(); }
+    let res;
+    try { res = await Route.computeRoutes(req); } catch (e) { logExt('Google 路線（' + mode + '）', 'ERR', String(e.message || e)); throw new Error('Google 路線規劃失敗（檢查是否啟用 Routes API）'); }
+    logExt('Google 路線（' + mode + '）', 200);
+    const rs = (res.routes || []).map(C.fromGoogleRoute).filter((r) => r.coords.length);
+    if (!rs.length) throw new Error(mode === 'transit' ? '這段沒有大眾運輸可搭（或末班車已過）' : '找不到可行路線');
+    return rs;
+  }
+
+  // 大眾運輸：公車段配上 TDX 即時到站
+  async function liveBusEta(seg) {
+    if (!tdx.ready() || !seg.fromP || !seg.line || !/公車|客運/.test(seg.vehicle)) return null;
+    const line = seg.line.replace(/'/g, "''");
+    const scopes = [...(S.county ? busCities().map((c) => `City/${c}`) : []), 'InterCity'];
+    for (const scope of scopes) {
+      let sor;
+      try { sor = await cachedGet(C.EP.busStops(scope, seg.line), { $filter: `RouteName/Zh_tw eq '${line}'`, $select: 'RouteUID,RouteName,Direction,Stops' }, 3); } catch { continue; }
+      for (const r of sor || []) {
+        const st = (r.Stops || []).map((s) => ({ uid: s.StopUID, p: C.pos(s.StopPosition), name: C.zh(s.StopName) }));
+        const near = (pt, lim) => { let bi = -1, bd = lim; st.forEach((s, i) => { if (s.p) { const d = C.dist(pt, s.p); if (d < bd) { bd = d; bi = i; } } }); return bi; };
+        const a = near(seg.fromP, 200), b = seg.toP ? near(seg.toP, 400) : -1;
+        if (a < 0 || (b >= 0 && b <= a)) continue;   // 方向不對
+        const rows = await tdx.get(C.EP.busEta(scope, seg.line), { $filter: `RouteUID eq '${r.RouteUID}' and Direction eq ${r.Direction} and StopUID eq '${st[a].uid}'`, $select: 'StopUID,EstimateTime,StopStatus,NextBusTime' }, 15);
+        return { ...C.busEtaText(rows[0]), stop: st[a].name };
+      }
+    }
+    return null;
+  }
+  const hhmm = (t) => (t ? new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+  const ICO_WALK = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="13" cy="4" r="2"/><path d="M10.5 8.5 8 21h2.2l1.6-7 2.2 2.2V21h2v-6.5l-2.3-2.3.7-3.2A6 6 0 0 0 19 12v-2a4 4 0 0 1-3.4-2l-1-1.6a2 2 0 0 0-2.4-.8L7 7.6V12h2V9z"/></svg>';
+  function transitTimes(r) {
+    const first = r.segs.find((s) => s.kind === 'transit');
+    let start = Date.now();
+    if (first?.dep) { const before = r.segs.slice(0, r.segs.indexOf(first)).reduce((a, s) => a + s.duration, 0); start = new Date(first.dep).getTime() - before * 1000; }
+    return { start, end: start + r.duration * 1000 };
+  }
+  function drawTransitOnMap(r) {
+    const feats = r.segs.filter((s) => s.coords.length > 1).map((s) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.kind === 'walk' ? '#8e8e93' : s.color } }));
+    map.getSource('route').setData({ type: 'FeatureCollection', features: feats.length ? feats : [{ type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords }, properties: {} }] });
+    const bb = bboxOf({ coordinates: r.coords });
+    if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 800, maxZoom: 16 });
+  }
+  function renderTransitList(T) {
+    const box = $('#rtBody'); if (!box) return;
+    drawTransitOnMap(T.routes[0]);
+    $('#rt-transit') && ($('#rt-transit').textContent = C.fmtDur(T.routes[0].duration));
+    box.innerHTML = `<div class="list">${T.routes.map((r, i) => {
+      const t = transitTimes(r);
+      const walkMin = Math.round(r.segs.filter((s) => s.kind === 'walk').reduce((a, s) => a + s.duration, 0) / 60);
+      const first = r.segs.find((s) => s.kind === 'transit');
+      const chips = r.segs.filter((s) => s.kind === 'transit' || s.duration > 90).map((s) => (s.kind === 'walk'
+        ? `<span class="wchip">${ICO_WALK}${Math.max(1, Math.round(s.duration / 60))}</span>`
+        : `<span class="lchip" style="background:${esc(s.color)};color:${esc(s.textColor)}">${esc(s.vehicle)} ${esc(s.line)}</span>`)).join('<span class="sep">›</span>');
+      return `<button class="item topt" data-i="${i}"><div class="t1"><b>${C.fmtDur(r.duration)}</b>　<span class="num">${hhmm(t.start)}–${hhmm(t.end)}</span>${r.fare ? `<span class="t2">・${esc(r.fare)}</span>` : ''}</div>
+        <div class="segrow">${chips || `<span class="wchip">${ICO_WALK}全程步行</span>`}</div>
+        <div class="t2">${first ? `${hhmm(first.dep)} 從 ${esc(first.from)} 上車・` : ''}步行共 ${walkMin} 分</div></button>`;
+    }).join('')}</div><p class="fine">路線與時刻：Google。公車另查 TDX 即時到站。</p>`;
+    box.querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => renderTransitDetail(T, +b.dataset.i)));
+  }
+  function renderTransitDetail(T, i) {
+    const r = T.routes[i], box = $('#rtBody'); if (!box) return;
+    drawTransitOnMap(r);
+    S.backFn = () => { previewRoute(T.dest, 'transit', T); };
+    const t = transitTimes(r);
+    box.innerHTML = `<div class="sec route-sum"><b>${C.fmtDur(r.duration)}</b><div>${hhmm(t.start)} 出發・${hhmm(t.end)} 抵達${r.fare ? '・' + esc(r.fare) : ''}</div></div>
+      <ol class="tl">${r.segs.map((s, k) => (s.kind === 'walk'
+        ? `<li class="walk"><div class="t1">步行 ${Math.max(1, Math.round(s.duration / 60))} 分鐘</div><div class="t2">${C.fmtDist(s.distance)}</div></li>`
+        : `<li style="--c:${esc(s.color)}"><div class="t1"><span class="lchip" style="background:${esc(s.color)};color:${esc(s.textColor)}">${esc(s.vehicle)} ${esc(s.line)}</span> ${s.headsign ? '往 ' + esc(s.headsign) : ''}</div>
+            <div class="t2">${hhmm(s.dep)} ${esc(s.from)} 上車</div>
+            <div class="t2">搭 ${s.stops} 站・${Math.max(1, Math.round(s.duration / 60))} 分鐘</div>
+            <span class="live far" id="live-${k}" ${/公車|客運/.test(s.vehicle) && tdx.ready() ? '' : 'hidden'}>即時到站：查詢中…</span>
+            <div class="t2">${hhmm(s.arr)} ${esc(s.to)} 下車</div></li>`)).join('')}
+        <li style="--c:#ff3b30;padding-bottom:0"><div class="t1">${esc(T.dest.name)}</div></li></ol>
+      ${r.segs[0]?.kind === 'walk' && r.segs[0].distance > 80 ? '<div class="acts"><button class="btn go wide" id="walkNav">步行導航到上車處</button></div>' : ''}
+      <p class="fine">時刻是 Google 的預估；公車「即時到站」來自 TDX。</p>`;
+    $('#walkNav')?.addEventListener('click', () => {
+      const s = r.segs.find((x) => x.kind === 'transit');
+      const p = s?.fromP || r.segs[0].coords[r.segs[0].coords.length - 1];
+      previewRoute({ name: s ? s.from : T.dest.name, p, addr: '' }, 'foot');
+    });
+    r.segs.forEach(async (s, k) => {
+      if (s.kind !== 'transit' || !/公車|客運/.test(s.vehicle) || !tdx.ready()) return;
+      const el = () => $('#live-' + k);
+      try {
+        const e = await liveBusEta(s);
+        if (!el()) return;
+        if (!e) { el().textContent = 'TDX 查不到這條路線的即時資料'; return; }
+        el().textContent = `即時：${e.stop} ${e.text}`;
+        el().classList.toggle('far', e.level !== 'now' && e.level !== 'soon');
+      } catch (err) { if (el()) el().textContent = '即時到站查詢失敗'; }
+    });
+  }
+
+  // ======================================================
+  // 導航（Google：開車／機車／步行；OSRM：自行車，沒有 Google 時全用 OSRM）
   // ======================================================
   const MODES = {
     car: { name: '開車', url: 'https://routing.openstreetmap.de/routed-car/route/v1/driving/', reach: 30, warn: [600, 150], zoom: 16.3, sim: 11 },
+    scooter: { name: '機車', reach: 25, warn: [400, 100], zoom: 16.6, sim: 9 },
     bike: { name: '自行車', url: 'https://routing.openstreetmap.de/routed-bike/route/v1/driving/', reach: 20, warn: [200, 50], zoom: 17, sim: 4.5 },
     foot: { name: '步行', url: 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/', reach: 15, warn: [120, 30], zoom: 17.5, sim: 1.4 },
   };
+  // 路線頁上方一直顯示的交通方式
+  const RT_TABS = [
+    ['transit', '大眾運輸', '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M7.5 6h9v5h-9z" fill="var(--cell)"/><path d="M7.5 20v-2M16.5 20v-2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>'],
+    ['car', '開車', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.6-4.5A2 2 0 0 1 8.5 5h7a2 2 0 0 1 1.9 1.5L19 11a2 2 0 0 1 1 1.7V18h-2.5v1.5h-2V18h-7v1.5h-2V18H4v-5.3A2 2 0 0 1 5 11zm2.2 0h9.6l-1.2-3.6a.6.6 0 0 0-.6-.4H9a.6.6 0 0 0-.6.4zM7 15.5a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6zm10 0a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z"/></svg>'],
+    ['scooter', '機車', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="17" r="2.6"/><circle cx="18" cy="17" r="2.6"/><path d="M8.6 17h6.8l1.2-5.5H12M16.6 11.5 15 5h-2.5M4 13.5h5l1.5 3.5"/></svg>'],
+    ['bike', '自行車', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="16" r="3.6"/><circle cx="18" cy="16" r="3.6"/><path d="M6 16l4-7.5h5.5l2.5 7.5M10 8.5l3 7.5H6M8.3 6.5h3.4"/></svg>'],
+    ['foot', '步行', ICO_WALK],
+  ];
   async function fetchRoute(from, to, mode) {
+    if (G && GMODE[mode]) return (await gRoute(from, to, mode))[0];
+    if (!MODES[mode].url) throw new Error('機車路線要用 Google 地圖金鑰（Google 有台灣機車模式，不會帶你上國道、快速道路）');
     const url = `${MODES[mode].url}${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson&steps=true`;
     const j = await getJSON(url, '路線規劃');
     const r = j.routes && j.routes[0];
     if (!r) throw new Error('找不到可行路線');
     const steps = r.legs.flatMap((l) => l.steps).map((s) => ({ maneuver: s.maneuver, name: s.name, ref: s.ref, distance: s.distance, duration: s.duration }));
-    return { coords: r.geometry.coordinates, steps, distance: r.distance, duration: r.duration };
+    return { coords: r.geometry.coordinates, steps, distance: r.distance, duration: r.duration, src: 'osrm' };
   }
   function getOrigin() {
     return new Promise((resolve) => {
@@ -1547,42 +1916,61 @@
   }
   let destMarker;
   function setDestPin(p) {
-    if (!destMarker) { const el = document.createElement('div'); el.className = 'pin'; destMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' }); }
+    if (!destMarker) { const el = document.createElement('div'); el.className = 'pin'; destMarker = new (MK())({ element: el, anchor: 'bottom' }); }
     destMarker.setLngLat(p).addTo(map);
   }
-  async function previewRoute(dest, mode) {
-    mode = mode || (S.nav && S.nav.mode) || 'car';
+  // 路線頁：上方固定五種交通方式，下面是這種方式怎麼走
+  async function previewRoute(dest, mode, cachedTransit) {
+    mode = mode || (S.nav && S.nav.mode) || LS.getItem('rtMode') || 'car';
+    if (!RT_TABS.some((t) => t[0] === mode)) mode = 'car';
+    LS.setItem('rtMode', mode);
     setDetent('half');
     S.saveDest = dest;
     setFocus(null);
-    setBody(`${backBtn}<div class="ph"><div class="tag">路線</div><h2>${esc(dest.name)}</h2>${dest.addr && dest.addr !== dest.name ? `<small>${esc(dest.addr)}</small>` : ''}<div class="acts">${saveBtn}</div></div>
+    const fromPlace = S.place && S.place.p && C.dist(S.place.p, dest.p) < 5 ? S.place : null;
+    setBody(`<div class="rthead">${backBtn}<div class="grow"><div class="tag">路線</div><h2>到 ${esc(dest.name)}</h2></div>${saveBtn}</div>
       <div id="saveBox" hidden></div>
-      <div class="seg" id="modeSeg" style="width:100%">${Object.keys(MODES).map((m) => `<button data-m="${m}" class="${m === mode ? 'on' : ''}" style="flex:1">${MODES[m].name}</button>`).join('')}<button disabled style="flex:1" title="第③階段">機車</button></div>
+      <div class="rtabs" id="modeSeg">${RT_TABS.map(([m, n, ico]) => `<button data-m="${m}" class="${m === mode ? 'on' : ''}">${ico}<span>${n}</span><small id="rt-${m}"></small></button>`).join('')}</div>
       <div id="rtBody">${loading}</div>`, 'route');
-    $('#modeSeg').querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => previewRoute(dest, b.dataset.m)));
+    if (fromPlace) S.backFn = () => openPlace(fromPlace);
+    $('#modeSeg').querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.m !== mode) previewRoute(dest, b.dataset.m); }));
     setDestPin(dest.p);
+    const body = () => $('#rtBody');
     try {
       const o = await getOrigin();
+      if (mode === 'transit') {
+        S.nav = null;
+        if (!G) { body().innerHTML = '<p class="note">大眾運輸轉乘（公車＋捷運＋火車怎麼接）要用 Google 地圖金鑰，在設定頁填。<br>沒有金鑰時：首頁的捷運、公車可以查單一路線和即時到站。</p>'; map.getSource('route').setData(emptyFC()); return; }
+        const T = cachedTransit || { dest, o, routes: await gRoute(o.p, dest.p, 'transit') };
+        if (!body()) return;
+        S.transit = T;
+        renderTransitList(T);
+        return;
+      }
       const rt = await fetchRoute(o.p, dest.p, mode);
       S.nav = { dest, mode, route: rt, cur: 0, active: false, origin: o };
       map.getSource('route').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: rt.coords }, properties: {} });
       const bb = bboxOf({ coordinates: rt.coords });
       map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 800, maxZoom: 16 });
       const eta = new Date(Date.now() + rt.duration * 1000);
-      if (!$('#rtBody')) return;
-      $('#rtBody').innerHTML = `<div class="sec route-sum"><b>${C.fmtDur(rt.duration)}</b><div>${C.fmtDist(rt.distance)}・${eta.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })} 抵達</div></div>
+      if (!body()) return;
+      if ($('#rt-' + mode)) $('#rt-' + mode).textContent = C.fmtDur(rt.duration);
+      const src = rt.src === 'google' ? (mode === 'scooter' ? 'Google 機車模式（避開國道、快速道路），含即時路況' : mode === 'foot' ? 'Google' : 'Google，含即時路況')
+        : 'OSRM（routing.openstreetmap.de），不含即時路況';
+      body().innerHTML = `<div class="sec route-sum"><b>${C.fmtDur(rt.duration)}</b><div>${C.fmtDist(rt.distance)}・${eta.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })} 抵達</div></div>
         ${o.real ? '' : '<p class="fine">沒有取得你的位置，起點暫用地圖中心。</p>'}
         <div class="acts"><button class="btn go wide" id="goBtn">出發</button><button class="btn" id="simBtn">模擬</button></div>
-        <div class="sec"><h3>轉彎清單</h3><div class="list">${rt.steps.slice(1).map((s) => { const m = C.maneuverText(s); return `<div class="item"><span style="width:26px;color:var(--blue)">${arrowSvg(m.icon)}</span><span class="grow"><span class="t1">${esc(m.text)}</span></span><span class="t2 num">${C.fmtDist(s.distance)}</span></div>`; }).join('')}</div></div>
-        <p class="fine">路線：OSRM（routing.openstreetmap.de），不含即時路況。機車導航在第③階段。</p>`;
+        <div class="sec"><h3>轉彎清單</h3><div class="list">${rt.steps.slice(1).map((s) => { const m = C.maneuverText(s); return `<div class="item"><span style="width:26px;color:var(--blue)">${arrowSvg(m.icon)}</span><span class="grow"><span class="t1">${esc(m.text)}</span></span><span class="t2 num">${s.distance ? C.fmtDist(s.distance) : ''}</span></div>`; }).join('')}</div></div>
+        <p class="fine">路線：${src}。${mode === 'scooter' ? '機車請依現場標誌兩段式左轉。' : ''}</p>`;
       $('#goBtn').addEventListener('click', () => startNav(false));
       $('#simBtn').addEventListener('click', () => startNav(true));
-    } catch (e) { if ($('#rtBody')) $('#rtBody').innerHTML = errBox(e); }
+    } catch (e) { if (body()) body().innerHTML = errBox(e); }
   }
 
   function startNav(sim) {
     const N = S.nav; if (!N) return;
     if (!sim) startCompass();   // 按「出發」當下要指南針權限（iPhone 規定要在點按時要）
+    if (SC.on && ['car', 'scooter'].includes(N.mode)) loadSpeedcam().catch(() => {});
     N.active = true; N.sim = sim; N.cur = 0; N.follow = true; N.off = 0; N.lastReroute = 0; N.said = {}; N.simM = 0;
     $('#turn').hidden = false;
     $('#hudSpeed').hidden = false;
@@ -1642,12 +2030,14 @@
     const v = speed != null && speed >= 0 ? speed : (prev && N.lastT ? C.dist(prev, p) / ((Date.now() - N.lastT) / 1000) : 0);
     N.lastT = Date.now();
     $('#hudSpeedN').textContent = Math.round((v || 0) * 3.6);
+    S.navKmh = (v || 0) * 3.6;
     // 鏡頭跟隨
     // 方向：在動就用 GPS 方向；停下來（等紅燈）GPS 方向不準，改用手機指南針
     const gpsH = heading != null && !Number.isNaN(heading) && (N.sim || (v || 0) > 1.5) ? heading : null;
     const brg = gpsH ?? (!N.sim && compassOn && S.hdg != null ? S.hdg
       : (prev && C.dist(prev, p) > 3 ? C.bearing(prev, p) : map.getBearing()));
     if (meMarker) { meMarker.getElement().classList.add('hdg'); meMarker.setRotation(brg); }
+    checkSpeedcam(p, brg, S.navKmh || 0);
     if (N.follow) map.easeTo({ center: p, bearing: brg, pitch: 50, zoom: cfg.zoom, duration: 800, padding: isWide() ? { left: 380, top: 120 } : { top: 140, bottom: sheetHeight() } });
   }
   async function reroute(p) {
@@ -1681,7 +2071,7 @@
     if (N.watch != null) navigator.geolocation.clearWatch(N.watch);
     if (arrived) speak('已抵達目的地');
     toast(arrived ? `已抵達 ${N.dest.name}` : '已結束導航');
-    $('#turn').hidden = true; $('#follow').hidden = true; $('#hudSpeed').hidden = true;
+    $('#turn').hidden = true; $('#follow').hidden = true; $('#hudSpeed').hidden = true; $('#hudCam').hidden = true;
     map.getSource('route').setData(emptyFC());
     destMarker?.remove();
     map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
@@ -1717,7 +2107,7 @@
     if (!meMarker) {
       const el = document.createElement('div'); el.className = 'me'; el.innerHTML = '<i class="cone"></i>';
       // rotationAlignment: 'map' → setRotation 給的是真實方位（0＝北），地圖轉了也對
-      meMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' });
+      meMarker = new (MK())({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' });
       if (S.hdg != null) { el.classList.add('hdg'); meMarker.setRotation(S.hdg); }
     }
     meMarker.setLngLat(p).addTo(map);
@@ -1993,6 +2383,9 @@
     $('#ytMode').value = LS.getItem('yt.mode') || 'auto';
     $('#ytKey').value = LS.getItem('yt.key') || '';
     $('#ttKey').value = ttKey();
+    $('#gKey').value = LS.getItem('g.key') || ''; $('#gMapId').value = LS.getItem('g.mapId') || '';
+    $('#gKey').placeholder = window.XINGLU_GOOGLE?.key ? '內建金鑰（要換才填）' : 'AIza…';
+    $('#gMsg').textContent = G ? '目前使用 Google 地圖。清空＝改回開放地圖。' : gCfg().key ? 'Google 地圖載入失敗，請看「連線紀錄」。' : '有 Google 金鑰：地圖、店家、街景、大眾運輸與機車路線都用 Google。';
     $('#relay').value = LS.getItem('relay') || '';
     $('#relay').placeholder = window.XINGLU_RELAY ? '內建：' + window.XINGLU_RELAY.replace(/^https?:\/\//, '') : 'https://….workers.dev';
     if (!msg && tdx.usingRelay()) { $('#kMsg').textContent = '目前經過中繼站取得資料，不用填。要改用自己的金鑰再填。'; $('#kMsg').className = 'fine okc'; }
@@ -2056,18 +2449,13 @@
       const act = a.dataset.act;
       if (act === 'relocate') { S.locFail = ''; showHome(); return firstLocate(); }
       if (act === 'savePlace') return openSaveBox(S.saveDest);
-      if (act === 'home') { clearBus(); if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); destMarker?.remove(); S.nav = null; } showHome(); }
+      if (act === 'home' && S.backFn) { const f = S.backFn; S.backFn = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); if (S.nav) S.nav = null; } return f(); }
+      if (act === 'home') { clearBus(); clearSearchPins(); S.place = null; S.lastG = null; if (!S.nav?.active) { map.getSource('route').setData(emptyFC()); destMarker?.remove(); S.nav = null; } showHome(); }
       if (act === 'settings') openSettings();
       if (act === 'navhere' && S.panelDest) previewRoute(S.panelDest);
       if (act === 'endnav') finishNav(false);
     });
-    $('#qMode').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-m]'); if (!b) return;
-      if (b.dataset.m !== S.qMode) $('#q').value = '';
-      setQMode(b.dataset.m);
-      if (b.dataset.m === 'metro' && S.county) searchMetro('');   // 點「捷運」直接列出附近的站
-      else $('#q').focus();
-    });
+    $('#svClose').addEventListener('click', () => { $('#sv').hidden = true; S.pano = null; $('#svPano').innerHTML = ''; });
     // 注音／拼音輸入時，按「確認」選字不能當成送出：選字中或剛選完 300ms 內的送出一律忽略，要再按一次「搜尋」
     let composing = false, compEnd = 0;
     $('#q').addEventListener('compositionstart', () => { composing = true; });
@@ -2086,6 +2474,7 @@
       if (r.dataset.k) toggleLayer(r.dataset.k);
       if (r.dataset.bm) setBasemap(r.dataset.bm);
       if (r.dataset.traffic) toggleTraffic();
+      if (r.dataset.cam) toggleSpeedcam();
       if (r.dataset.auto) { autoVec = !autoVec; LS.setItem('autoVec', autoVec ? '1' : '0'); applyBase(); renderLayerPop(); }
     });
     $('#b3d').addEventListener('click', () => {
@@ -2108,6 +2497,14 @@
       if (v) LS.setItem('relay', v); else LS.removeItem('relay');
       const ok = await checkRelay(true);
       if (ok) { S.trafficUrl = null; if (!LS.getItem('basemap')) basemap = 'tomtom'; applyBase(); if (S.county) { const c = S.county.code; S.county = null; selectCounty(c); } else showHome(); }
+    });
+    $('#gSave').addEventListener('click', () => {
+      const k = $('#gKey').value.trim(), id = $('#gMapId').value.trim();
+      if (k && !/^AIza[\w-]{30,}$/.test(k)) { $('#gMsg').textContent = '金鑰格式不對：Google 金鑰是 AIza 開頭、約 39 個字。'; $('#gMsg').className = 'fine err'; return; }
+      if (k) LS.setItem('g.key', k); else LS.removeItem('g.key');
+      if (id) LS.setItem('g.mapId', id); else LS.removeItem('g.mapId');
+      $('#gMsg').textContent = '重新載入中…'; $('#gMsg').className = 'fine';
+      setTimeout(() => location.reload(), 300);
     });
     $('#ttSave').addEventListener('click', async () => {
       const v = $('#ttKey').value.trim();

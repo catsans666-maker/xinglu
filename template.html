@@ -13,6 +13,8 @@
 <script>
   // ★ 中繼站網址（Cloudflare Worker）。金鑰藏在中繼站，網頁打開就能用。要換就改這一行。
   window.XINGLU_RELAY = '';
+  // ★ Google 地圖金鑰（公開的瀏覽器金鑰，靠「網站限制」保護，可以放這裡）；也可以在設定頁填
+  window.XINGLU_GOOGLE = { key: '', mapId: '' };
 </script>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -89,6 +91,58 @@ svg { display: block; }
 #hudSpeed { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--sep); display: flex; align-items: baseline; gap: 4px; }
 #hudSpeed b { font: 600 22px/1 var(--f-round); font-variant-numeric: tabular-nums; }
 #hudSpeed span { font-size: 11px; color: var(--muted); }
+/* 測速提醒：仿台灣限速標誌（白底紅圈） */
+#hudCam { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--sep); display: flex; align-items: center; gap: 8px; }
+#hudCam i { font: 700 15px/1 var(--f-round); font-style: normal; color: #111; background: #fff; border: 4px solid #e60012; border-radius: 50%; width: 38px; height: 38px; display: grid; place-items: center; box-sizing: border-box; flex: none; }
+#hudCam > span { display: flex; flex-direction: column; font-size: 12px; color: var(--ink2); }
+#hudCam b { font-size: 13px; color: var(--ink); }
+#hudCam.over i { animation: camPulse .6s ease-in-out infinite alternate; }
+#hudCam.over b { color: #ff3b30; }
+@keyframes camPulse { to { transform: scale(1.12); box-shadow: 0 0 0 6px rgba(230,0,18,.25); } }
+/* 街景全螢幕 */
+#sv { position: fixed; inset: 0; z-index: 40; background: #000; }
+#svPano { position: absolute; inset: 0; }
+#svClose { position: absolute; z-index: 2; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 12px); border: 0; padding: 9px 16px; border-radius: 999px; font: 600 15px var(--f); color: var(--ink); }
+/* 路線頁：標題一行（返回＋目的地＋存），把空間留給路線 */
+.rthead { display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; }
+.rthead .back { flex: none; margin: 0; }
+.rthead .grow { min-width: 0; }
+.rthead h2 { font-size: 20px; line-height: 1.25; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rthead .btn { flex: none; }
+/* 電腦版導航：左邊面板縮成導航列，不要整條空白 */
+@media (min-width: 900px) { body.navigating #sheet { bottom: auto !important; height: auto !important; } }
+/* 路線頁：交通方式分頁（一直顯示） */
+.rtabs { display: flex; gap: 4px; margin: 4px 0 10px; overflow-x: auto; scrollbar-width: none; }
+.rtabs::-webkit-scrollbar { display: none; }
+.rtabs button { flex: 1 0 auto; min-width: 58px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 6px 6px; border: 0; border-radius: 12px; background: var(--cell); color: var(--ink2); font: 500 12px var(--f); }
+.rtabs button svg { width: 20px; height: 20px; }
+.rtabs button small { font-size: 11px; color: var(--muted); min-height: 13px; font-variant-numeric: tabular-nums; }
+.rtabs button.on { background: var(--blue); color: #fff; }
+.rtabs button.on small { color: rgba(255,255,255,.85); }
+/* 大眾運輸方案 */
+.topt { flex-direction: column; align-items: stretch !important; gap: 6px; }
+.topt .t1 b { font-size: 18px; }
+.segrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.segrow .sep { color: var(--muted); font-size: 12px; }
+.lchip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 6px; font: 600 12.5px/1.35 var(--f); }
+.wchip { display: inline-flex; align-items: center; gap: 2px; color: var(--ink2); font-size: 12.5px; }
+.wchip svg { width: 14px; height: 14px; }
+.tl { list-style: none; margin: 4px 0 0; padding: 0; }
+.tl li { position: relative; padding: 0 0 14px 26px; }
+.tl li::before { content: ''; position: absolute; left: 8px; top: 18px; bottom: 0; width: 4px; border-radius: 2px; background: var(--c, #c7c7cc); }
+.tl li.walk::before { background: repeating-linear-gradient(var(--muted) 0 4px, transparent 4px 8px); width: 3px; left: 8.5px; }
+.tl li::after { content: ''; position: absolute; left: 3px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg, #fff); border: 3px solid var(--c, #8e8e93); }
+.tl .t1 { font-weight: 600; }
+.tl .t2 { color: var(--ink2); font-size: 13px; margin-top: 2px; }
+.tl .live { display: inline-block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--green, #34c759); }
+.tl .live.far { color: var(--ink2); }
+/* 地點資料卡 */
+.pmeta { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 13.5px; color: var(--ink2); margin-top: 4px; }
+.pmeta .star { color: #ff9500; font-weight: 600; }
+.pmeta .open { color: #34c759; font-weight: 600; }
+.pmeta .shut { color: #ff3b30; font-weight: 600; }
+.pphoto { width: 100%; height: 150px; object-fit: cover; border-radius: 14px; margin: 8px 0 2px; background: var(--cell); }
+.kind { font-size: 11.5px; color: var(--muted); font-weight: 500; }
 
 /* 右上：轉彎卡 */
 #turn {
@@ -557,6 +611,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
   <div id="hudDate"></div>
   <div id="hudWx"></div>
   <div id="hudSpeed" hidden><b id="hudSpeedN">0</b><span>km/h</span></div>
+  <div id="hudCam" hidden><i id="hudCamLim">50</i><span><b>測速</b><span id="hudCamD"></span></span></div>
 </div>
 
 <div id="turn" hidden aria-live="polite">
@@ -576,15 +631,15 @@ body { font-size: 17px; letter-spacing: -.01em; }
 </div>
 
 <div id="layerPop" class="glass" hidden></div>
+<div id="sv" hidden><div id="svPano"></div><button id="svClose" class="glass">完成</button></div>
 <button id="follow" class="glass" hidden>回到導航</button>
 
 <section id="sheet" class="glass" data-d="half" aria-label="搜尋與資訊">
   <div class="grab" id="grab" role="button" aria-label="展開或收合"></div>
   <div class="srow" id="srow">
-    <div class="seg" id="qMode"><button data-m="place" class="on">地點</button><button data-m="bus">公車</button><button data-m="metro">捷運</button></div>
     <form id="qForm" class="field" role="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input id="q" type="search" placeholder="搜尋地點" autocomplete="off" enterkeyhint="search" aria-label="搜尋">
+      <input id="q" type="search" placeholder="搜尋地點、店家、地址或公車號碼" autocomplete="off" enterkeyhint="search" aria-label="搜尋">
     </form>
   </div>
   <div id="sheetBody"></div>
@@ -618,6 +673,13 @@ body { font-size: 17px; letter-spacing: -.01em; }
 <div id="setDlg" class="dlg" hidden>
   <div class="card" role="dialog" aria-labelledby="setTitle">
     <div class="card-h"><span></span><h2 id="setTitle">設定</h2><button data-close="setDlg">完成</button></div>
+    <h3>Google 地圖</h3>
+    <div class="group">
+      <label class="cell"><span class="lb">API 金鑰</span><input id="gKey" type="text" placeholder="AIza…" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <label class="cell"><span class="lb">Map ID</span><input id="gMapId" type="text" placeholder="選填（要旋轉、傾斜才需要）" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+      <button class="cell act" id="gSave">儲存並重新載入</button>
+    </div>
+    <p id="gMsg" class="fine">有 Google 金鑰：地圖、店家、街景、大眾運輸與機車路線都用 Google。清空＝改回開放地圖。</p>
     <h3>中繼站</h3>
     <div class="group">
       <label class="cell"><span class="lb">網址</span><input id="relay" type="url" placeholder="https://….workers.dev" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
@@ -688,6 +750,9 @@ body { font-size: 17px; letter-spacing: -.01em; }
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <script>
 /*CORE*/
+</script>
+<script>
+/*GMAP*/
 </script>
 <script>
 /*UI*/
