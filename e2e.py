@@ -30,6 +30,7 @@ window.maplibregl = (function(){
     getStyle(){ return {layers:this.order.map(id=>this.ly[id])}; }
     setFeatureState(){}
     fitBounds(b){ this.lastView={fit:b}; } flyTo(o){ this.lastView=o; if(o.center) this.center=Array.isArray(o.center)?o.center:[o.center.lng,o.center.lat]; if(o.bearing!=null) this.setB(o.bearing); }
+    isMoving(){ return false; } jumpTo(o){ this.jumps=(this.jumps||0)+1; if(o.center) this.center=Array.isArray(o.center)?o.center:[o.center.lng,o.center.lat]; if(o.bearing!=null) this.setB(o.bearing); }
     easeTo(o){ this.lastView=o; if(o.pitch!=null) this.pitch=o.pitch; if(o.center) this.center=Array.isArray(o.center)?o.center:[o.center.lng,o.center.lat]; if(o.bearing!=null) this.setB(o.bearing); }
     setB(b){ b=((b+540)%360)-180; if(b!==this.bearing){ this.bearing=b; this.fire('rotate'); } }
     getZoom(){ return this.z; } getPitch(){ return this.pitch; } getBearing(){ return this.bearing; }

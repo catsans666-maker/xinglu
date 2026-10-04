@@ -135,6 +135,46 @@
   const GBASES = { roadmap: { name: '地圖', note: 'Google 地圖・店家、餐廳、便利商店' }, hybrid: { name: '衛星', note: 'Google 衛星空照＋路名' } };
   let gBase = GBASES[LS.getItem('g.base')] ? LS.getItem('g.base') : 'roadmap';
   let gTraffic = null;                  // google.maps.TrafficLayer
+  // ---------- Google 錯誤翻成白話（Google 只會在 console 印英文代號） ----------
+  const SITE_RULE = () => location.origin + (location.pathname.replace(/[^/]*$/, '') || '/') + '*';
+  const G_ERR = {
+    ApiNotActivatedMapError: () => '「Maps JavaScript API」還沒啟用',
+    ApiProjectMapError: () => '金鑰所屬專案沒啟用 Maps JavaScript API，或還沒開帳單',
+    BillingNotEnabledMapError: () => '專案還沒開帳單：Google 規定要綁卡（每月免費額度內不收錢）',
+    RefererNotAllowedMapError: () => `金鑰的「網站限制」沒包含這個網址，請加入 ${SITE_RULE()}`,
+    InvalidKeyMapError: () => '金鑰錯了（複製時少字或多了空白）',
+    MissingKeyMapError: () => '沒有帶金鑰',
+    ExpiredKeyMapError: () => '金鑰過期或被刪掉了，重新建一把',
+    DeletedApiProjectMapError: () => '金鑰所屬的專案被刪除了',
+    OverQuotaMapError: () => '超過用量上限（你設的每日上限或免費額度）',
+    ApiTargetBlockedMapError: () => '金鑰的「API 限制」沒勾 Maps JavaScript API',
+  };
+  S.gErr = null;
+  ['error', 'warn'].forEach((lv) => {
+    const orig = console[lv].bind(console);
+    console[lv] = (...a) => {
+      try {
+        const m = String(a[0] || '').match(/Google Maps JavaScript API (?:error|warning): (\w+)/);
+        if (m && G_ERR[m[1]] && !S.gErr) {
+          S.gErr = { code: m[1], msg: G_ERR[m[1]]() };
+          logExt('Google 地圖', 'ERR', m[1]);
+          setTimeout(() => toast('Google 地圖：' + S.gErr.msg + '（設定 → 檢查 Google 設定）'), 0);
+        }
+      } catch { /* 不影響原本的 console */ }
+      return orig(...a);
+    };
+  });
+  // Places／Routes 的錯誤訊息 → 白話
+  function gHint(e, api) {
+    const m = String((e && (e.message || e)) || '');
+    if (/has not been used|is disabled|SERVICE_DISABLED|not been enabled/i.test(m)) return `「${api}」還沒啟用`;
+    if (/API_KEY_SERVICE_BLOCKED|blocked|not authorized to use this API/i.test(m)) return `金鑰的「API 限制」沒勾「${api}」`;
+    if (/billing/i.test(m)) return '專案還沒開帳單';
+    if (/referer|referrer|API_KEY_HTTP_REFERRER_BLOCKED/i.test(m)) return `金鑰的「網站限制」沒加 ${SITE_RULE()}`;
+    if (/quota|RESOURCE_EXHAUSTED|OVER_QUERY_LIMIT/i.test(m)) return '超過用量上限（每日上限或免費額度）';
+    if (/API key not valid|INVALID_ARGUMENT.*key|API_KEY_INVALID/i.test(m)) return '金鑰錯了';
+    return m.slice(0, 140) || '不明錯誤';
+  }
   // 沒選過底圖：有 TomTom 就用 TomTom（最新），沒有就用國土測繪
   let basemap = BASEMAPS[LS.getItem('basemap')] ? LS.getItem('basemap') : (hasTT() ? 'tomtom' : 'emap');
   // 「旋轉或深色時自動換向量圖」：國土測繪是圖片地圖，地圖一轉字就跟著轉、深色只能反轉顏色；向量圖沒有這兩個問題
@@ -351,7 +391,23 @@
     });
   }
 
+  // 跟隨中，如果程式要把地圖移去別的地方（看搜尋結果、路線、站點），就先停止跟隨，
+  //   不然下一筆 GPS 進來又會把地圖拉回你身上
+  function guardCamera() {
+    ['easeTo', 'flyTo', 'fitBounds'].forEach((k) => {
+      const orig = map[k].bind(map);
+      map[k] = (a, b) => {
+        if (S.track !== 'off' && !S.nav?.active) {
+          const c = k === 'fitBounds' ? null : a && a.center;
+          const cc = c ? (Array.isArray(c) ? c : [c.lng, c.lat]) : null;
+          if (k === 'fitBounds' || (cc && ME.cur && C.dist(cc, ME.cur) > 60)) setTrack('off');
+        }
+        return orig(a, b);
+      };
+    });
+  }
   function bindMapCommon() {
+    guardCamera();
     map.on('load', onMapLoad);
     map.on('dragstart', () => {
       if (S.nav?.active) { S.nav.follow = false; $('#follow').hidden = false; }
@@ -1308,7 +1364,8 @@
   // ======================================================
   function setQMode(m) {
     S.qMode = m;
-    $('#q').placeholder = G ? '搜尋地點、店家、地址或公車號碼' : '搜尋地點、地址或公車號碼';
+    const narrow = document.body.classList.contains('pip') && !isWide();
+    $('#q').placeholder = narrow ? '搜尋' : G ? '搜尋地點、店家或公車' : '搜尋地點或公車號碼';
   }
   // 公車號碼：307、紅31、藍1、小1、F612、幹線 1、9025 …（「307公車」也算）
   const isBusQuery = (q) => /^((紅|藍|綠|橘|棕|黃|小|內科|市民|幹線|跳)\s*)?[A-Za-z]?\d{1,4}[A-Za-z]?(副|區|延|直達車|區間車)?(公車|路)?$/.test(q.replace(/\s+/g, ''));
@@ -1440,7 +1497,7 @@
       if (bb) map.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: fitPad(), duration: 700, maxZoom: 16 });
       $('#rBody').innerHTML = `<div class="list">${rows.map((r, i) => `<button class="item" data-i="${i}"><span class="grow"><span class="t1">${esc(r.name)}${r.type ? ` <span class="kind">${esc(r.type)}</span>` : ''}</span><div class="t2">${esc(r.addr)}</div></span><span class="t2 num">${C.fmtDist(r._d)}</span><span class="muted">›</span></button>`).join('')}</div><p class="fine">距離是離${refLbl}・地點資料：Google</p>`;
       $('#rBody').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => openPlace(rows[+b.dataset.i])));
-    } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗（檢查是否啟用 Places API (New)）')); }
+    } catch (e) { logExt('Google 地點搜尋', 'ERR', String(e.message || e)); if ($('#rBody')) $('#rBody').innerHTML = errBox(new Error('Google 搜尋失敗：' + gHint(e, 'Places API (New)'))); }
   }
 
   async function searchBus(q, scopeKind) {
@@ -1666,7 +1723,7 @@
         } catch (e) {
           logExt('Google 地點資料', 'ERR', String(e.message || e));
           d.full = true;
-          if (S.place === d) { draw(); if ($('#pcMore')) $('#pcMore').insertAdjacentHTML('afterbegin', errBox(new Error('地點詳細資料載入失敗（Google 額度或金鑰）'))); }
+          if (S.place === d) { draw(); if ($('#pcMore')) $('#pcMore').insertAdjacentHTML('afterbegin', errBox(new Error('地點詳細資料載入失敗：' + gHint(e, 'Places API (New)')))); }
         }
       })();
     }
@@ -1788,7 +1845,7 @@
     if (mode === 'car' || mode === 'scooter') req.routingPreference = 'TRAFFIC_AWARE';
     if (mode === 'transit') { req.computeAlternativeRoutes = true; req.departureTime = new Date(); }
     let res;
-    try { res = await Route.computeRoutes(req); } catch (e) { logExt('Google 路線（' + mode + '）', 'ERR', String(e.message || e)); throw new Error('Google 路線規劃失敗（檢查是否啟用 Routes API）'); }
+    try { res = await Route.computeRoutes(req); } catch (e) { logExt('Google 路線（' + mode + '）', 'ERR', String(e.message || e)); throw new Error('Google 路線規劃失敗：' + gHint(e, 'Routes API')); }
     logExt('Google 路線（' + mode + '）', 200);
     const rs = (res.routes || []).map(C.fromGoogleRoute).filter((r) => r.coords.length);
     if (!rs.length) throw new Error(mode === 'transit' ? '這段沒有大眾運輸可搭（或末班車已過）' : '找不到可行路線');
@@ -2036,9 +2093,13 @@
     const gpsH = heading != null && !Number.isNaN(heading) && (N.sim || (v || 0) > 1.5) ? heading : null;
     const brg = gpsH ?? (!N.sim && compassOn && S.hdg != null ? S.hdg
       : (prev && C.dist(prev, p) > 3 ? C.bearing(prev, p) : map.getBearing()));
-    if (meMarker) { meMarker.getElement().classList.add('hdg'); meMarker.setRotation(brg); }
+    setMeHeading(brg);
     checkSpeedcam(p, brg, S.navKmh || 0);
-    if (N.follow) map.easeTo({ center: p, bearing: brg, pitch: 50, zoom: cfg.zoom, duration: 800, padding: isWide() ? { left: 380, top: 120 } : { top: 140, bottom: sheetHeight() } });
+    if (N.follow && !N.camReady) {
+      // 第一次（或按「回到導航」）：轉到導航視角；之後每一格由藍點動畫帶著鏡頭走
+      map.easeTo({ center: p, bearing: brg, pitch: 50, zoom: cfg.zoom, duration: 700, padding: navPad() });
+      N.camReady = true;
+    }
   }
   async function reroute(p) {
     const N = S.nav; N.lastReroute = Date.now(); N.off = 0;
@@ -2074,7 +2135,7 @@
     $('#turn').hidden = true; $('#follow').hidden = true; $('#hudSpeed').hidden = true; $('#hudCam').hidden = true;
     map.getSource('route').setData(emptyFC());
     destMarker?.remove();
-    map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    map.easeTo({ pitch: 0, bearing: 0, duration: 600, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
     document.body.classList.remove('navigating');
     $('#srow').hidden = false;
     $('#sheetBody').style.paddingTop = '';
@@ -2103,14 +2164,66 @@
   // 位置
   // ======================================================
   let meMarker;
+  // ---------- 我的位置：平順移動 ----------
+  //   GPS 大約每秒一筆，直接跳會一格一格的。改成：新的一筆進來時，從「畫面上的位置」
+  //   用動畫走到新位置，時間＝兩筆之間的間隔，所以看起來是連續移動（Apple／Google 地圖也是這樣做）。
+  //   方向（指南針／行進方向）也做平滑，不會抖。鏡頭跟隨在同一個動畫裡做，跟藍點同步。
+  const ME = { cur: null, from: null, to: null, t0: 0, dur: 1000, lastFix: 0, hdg: null, hdgTo: null, raf: 0 };
+  window.__xlME = ME;   // 除錯用
   function placeMe(p) {
     if (!meMarker) {
       const el = document.createElement('div'); el.className = 'me'; el.innerHTML = '<i class="cone"></i>';
       // rotationAlignment: 'map' → setRotation 給的是真實方位（0＝北），地圖轉了也對
       meMarker = new (MK())({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' });
       if (S.hdg != null) { el.classList.add('hdg'); meMarker.setRotation(S.hdg); }
+      meMarker.setLngLat(p).addTo(map);
     }
-    meMarker.setLngLat(p).addTo(map);
+    moveMe(p);
+  }
+  function moveMe(p) {
+    const now = performance.now();
+    if (!ME.cur || C.dist(ME.cur, p) > 400) {          // 第一筆、或跳很遠（例如從粗略定位變精準）：直接過去
+      ME.cur = p.slice(); ME.from = p.slice(); ME.to = p.slice(); ME.t0 = now; ME.dur = 1;
+    } else {
+      if (ME.to && C.dist(ME.to, p) < 1) { ME.lastFix = now; return; }   // 站著不動時 GPS 小抖動不理它
+      const gap = ME.lastFix ? now - ME.lastFix : 1000;
+      ME.from = ME.cur.slice(); ME.to = p.slice(); ME.t0 = now;
+      ME.dur = Math.max(250, Math.min(gap * 1.1, 1200));   // 剛好在下一筆進來時走到，看起來是連續的
+    }
+    ME.lastFix = now;
+    kickMe();
+  }
+  function setMeHeading(h) {
+    if (h == null || Number.isNaN(h)) return;
+    ME.hdgTo = (h + 360) % 360;
+    if (ME.hdg == null) ME.hdg = ME.hdgTo;
+    if (meMarker) meMarker.getElement().classList.add('hdg');
+    kickMe();
+  }
+  function kickMe() { if (!ME.raf) ME.raf = requestAnimationFrame(meFrame); }
+  const navPad = () => (isWide() ? { left: 380, top: 120, right: 0, bottom: 0 } : { top: 140, bottom: sheetHeight(), left: 0, right: 0 });
+  function meFrame(now) {
+    ME.raf = 0;
+    let busy = false;
+    if (ME.to) {
+      const k = Math.min(1, (now - ME.t0) / ME.dur);
+      ME.cur = [ME.from[0] + (ME.to[0] - ME.from[0]) * k, ME.from[1] + (ME.to[1] - ME.from[1]) * k];
+      if (k < 1) busy = true;
+      if (meMarker) meMarker.setLngLat(ME.cur);
+    }
+    if (ME.hdgTo != null) {
+      const d = ((ME.hdgTo - ME.hdg + 540) % 360) - 180;
+      if (Math.abs(d) > 0.4) { ME.hdg = (ME.hdg + d * 0.2 + 360) % 360; busy = true; } else ME.hdg = ME.hdgTo;
+      if (meMarker) meMarker.setRotation(ME.hdg);
+    }
+    // 鏡頭跟著藍點走（地圖自己在動畫或使用者在拖的時候不搶）
+    if (ME.cur && map && !(map.isMoving && map.isMoving())) {
+      const N = S.nav;
+      if (N?.active) { if (N.follow && N.camReady) map.jumpTo({ center: ME.cur, bearing: ME.hdg ?? map.getBearing(), padding: navPad() }); }
+      else if (S.track === 'follow') map.jumpTo({ center: ME.cur });
+      else if (S.track === 'heading') map.jumpTo({ center: ME.cur, ...(ME.hdg != null ? { bearing: ME.hdg } : {}) });
+    }
+    if (busy) kickMe();
   }
 
   // ======================================================
@@ -2172,14 +2285,8 @@
   }
   function setHeading(h) {
     S.hdg = h;
-    if (meMarker) { meMarker.getElement().classList.add('hdg'); meMarker.setRotation(h); }
-    if (S.track !== 'heading' || S.nav?.active) return;
-    const now = performance.now();
-    const diff = Math.abs(((h - map.getBearing()) % 360 + 540) % 360 - 180);
-    if (diff > 2 && now - lastRot > 120) {
-      lastRot = now;
-      map.easeTo({ center: S.me || map.getCenter(), bearing: h, duration: 160, easing: (t) => t });
-    }
+    if (S.nav?.active) return;   // 導航中用行進方向
+    setMeHeading(h);
   }
   // 即時 GPS 持續追蹤。高精度拿不到（桌機沒有 GPS 晶片會逾時）就退回一般精度
   function startPosWatch(hi = true) {
@@ -2187,15 +2294,14 @@
     posWatch = navigator.geolocation.watchPosition((g) => {
       if (S.nav?.active) return;   // 導航中由導航自己處理
       S.me = [g.coords.longitude, g.coords.latitude];
-      placeMe(S.me);
+      placeMe(S.me);             // 藍點動畫＋鏡頭跟隨都在這裡面
       autoCounty(S.me);          // 移動到別的縣市就自動換
       updatePlaceLabel(S.me);    // 「你在」顯示的路名
       const gh = g.coords.heading;
       if (!compassOn && gh != null && !Number.isNaN(gh) && (g.coords.speed || 0) > 1) setHeading(gh);
-      if (S.track !== 'off') map.easeTo({ center: S.me, duration: 500, ...(S.track === 'heading' && S.hdg != null ? { bearing: S.hdg } : {}) });
     }, (e) => {
       if (hi && (e.code === 2 || e.code === 3)) { navigator.geolocation.clearWatch(posWatch); posWatch = null; startPosWatch(false); }
-    }, { enableHighAccuracy: hi, maximumAge: 2000, timeout: 15000 });
+    }, { enableHighAccuracy: hi, maximumAge: 0, timeout: 15000 });
   }
   // 單次定位：先高精度，逾時退回一般精度
   function getPos() {
@@ -2215,6 +2321,7 @@
       placeMe(p);
       startPosWatch();
       map.flyTo({ center: p, zoom: 15.5, bearing: 0, duration: 1200 });
+      setTrack('follow');        // 預設跟著你走；拖地圖就停，按定位鈕再跟
       autoCounty(p);
       updatePlaceLabel(p);
       loadWeather();
@@ -2227,7 +2334,7 @@
   }
 
   function locate() {
-    if (S.nav?.active) { S.nav.follow = true; $('#follow').hidden = true; return; }
+    if (S.nav?.active) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; return; }
     if (!navigator.geolocation) return toast('這個瀏覽器不支援定位');
     startCompass();
     if (S.track === 'follow') {
@@ -2238,8 +2345,8 @@
     if (S.track === 'heading') return setTrack('follow');
     const go = (p) => {
       S.me = p; placeMe(p);
-      setTrack('follow');
       map.flyTo({ center: p, zoom: Math.max(map.getZoom(), 15), bearing: 0 });
+      setTrack('follow');
       startPosWatch();
       loadWeather();
     };
@@ -2277,6 +2384,7 @@
     const pip = ytMode() === 'pip';
     const pipHidden = LS.getItem('pip.hide') === '1';
     document.body.classList.toggle('pip', pip);
+    setQMode(S.qMode);
     $('#pipZone').hidden = !pip || pipHidden;
     if (pip) { $('#yt').hidden = true; $('#ytFab').hidden = !pipHidden; }
     else {
@@ -2385,13 +2493,52 @@
     $('#ttKey').value = ttKey();
     $('#gKey').value = LS.getItem('g.key') || ''; $('#gMapId').value = LS.getItem('g.mapId') || '';
     $('#gKey').placeholder = window.XINGLU_GOOGLE?.key ? '內建金鑰（要換才填）' : 'AIza…';
-    $('#gMsg').textContent = G ? '目前使用 Google 地圖。清空＝改回開放地圖。' : gCfg().key ? 'Google 地圖載入失敗，請看「連線紀錄」。' : '有 Google 金鑰：地圖、店家、街景、大眾運輸與機車路線都用 Google。';
+    $('#gOrigin').textContent = SITE_RULE();
+    $('#gMsg').textContent = S.gErr ? 'Google 地圖有問題：' + S.gErr.msg : G ? '目前使用 Google 地圖。清空＝改回開放地圖。' : gCfg().key ? 'Google 地圖載入失敗，請看「連線紀錄」。' : '有 Google 金鑰：地圖、店家、街景、大眾運輸與機車路線都用 Google。';
     $('#relay').value = LS.getItem('relay') || '';
     $('#relay').placeholder = window.XINGLU_RELAY ? '內建：' + window.XINGLU_RELAY.replace(/^https?:\/\//, '') : 'https://….workers.dev';
     if (!msg && tdx.usingRelay()) { $('#kMsg').textContent = '目前經過中繼站取得資料，不用填。要改用自己的金鑰再填。'; $('#kMsg').className = 'fine okc'; }
     $('#voiceSw').classList.toggle('on', S.voice); $('#voiceSw').setAttribute('aria-checked', S.voice);
     if (msg) { $('#kMsg').textContent = msg; $('#kMsg').className = 'fine'; }
     openDialog('setDlg');
+  }
+  // 「檢查 Google 設定」：三個 API 各打一次最便宜的請求，哪個不行、怎麼修，直接講
+  async function checkGoogle() {
+    const box = $('#gMsg');
+    const typed = $('#gKey').value.trim();
+    const key = typed || gCfg().key;
+    const out = [];
+    const show = () => { box.className = 'fine'; box.innerHTML = out.join('<br>'); };
+    const ok = (t) => out.push(`<span class="ok">✓</span> ${esc(t)}`);
+    const bad = (t, h) => out.push(`<span class="bad">✗</span> ${esc(t)}：${esc(h)}`);
+    if (!key) { box.textContent = '還沒填金鑰。照下面「怎麼申請」做完，把 AIza 開頭的金鑰貼上來。'; return; }
+    if (!/^AIza[\w-]{30,}$/.test(key)) { box.textContent = '金鑰格式不對：Google 金鑰是 AIza 開頭、約 39 個字。'; return; }
+    if (G && typed && typed !== gCfg().key) { box.textContent = '你改了金鑰：先按「儲存並重新載入」，再檢查。'; return; }
+    box.textContent = '檢查中…（約 5 秒）';
+    if (!window.google?.maps?.Map) {
+      try { await GM.load(key); } catch (e) { box.textContent = '✗ 連不到 Google（網路問題，或這個瀏覽器擋了 Google）'; return; }
+    }
+    if (!G) {   // 還沒用 Google 地圖：開一張看不見的小地圖，讓 Google 驗證金鑰
+      const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:-9999px;width:50px;height:50px';
+      document.body.appendChild(d);
+      try { new google.maps.Map(d, { center: { lat: 25.05, lng: 121.52 }, zoom: 10 }); } catch { /* 錯誤會從 console 抓到 */ }
+      await new Promise((r) => setTimeout(r, 3000));
+      d.remove();
+    }
+    if (S.gErr) bad('Maps JavaScript API', S.gErr.msg); else ok('Maps JavaScript API（地圖）');
+    try {
+      const { Place } = await google.maps.importLibrary('places');
+      await Place.searchByText({ textQuery: '台北車站', fields: ['id'], maxResultCount: 1 });
+      ok('Places API (New)（搜尋、店家）');
+    } catch (e) { bad('Places API (New)', gHint(e, 'Places API (New)')); logExt('檢查 Places', 'ERR', String(e.message || e)); }
+    try {
+      const { Route } = await google.maps.importLibrary('routes');
+      await Route.computeRoutes({ origin: { lat: 25.0478, lng: 121.517 }, destination: { lat: 25.046, lng: 121.52 }, travelMode: 'WALKING', fields: ['distanceMeters'] });
+      ok('Routes API（開車、機車、大眾運輸路線）');
+    } catch (e) { bad('Routes API', gHint(e, 'Routes API')); logExt('檢查 Routes', 'ERR', String(e.message || e)); }
+    out.push(gCfg().mapId || $('#gMapId').value.trim() ? 'Map ID：已填' : 'Map ID：沒填（可以用；要導航轉向、傾斜再去建）');
+    if (!G && !S.gErr && typed && typed !== (LS.getItem('g.key') || '')) out.push('都通過的話，按「儲存並重新載入」就會換成 Google 地圖。');
+    show();
   }
   async function saveKey() {
     const id = $('#kId').value, sec = $('#kSecret').value;
@@ -2467,6 +2614,7 @@
       runSearch();
     });
     $('#q').addEventListener('focus', () => { if (!isWide() && sheet().dataset.d === 'peek') setDetent('half'); });
+    document.addEventListener('focusout', (e) => { if (e.target.matches?.('input,textarea,select')) setTimeout(() => window.scrollTo(0, 0), 60); });
 
     $('#bLayers').addEventListener('click', () => { renderLayerPop(); $('#layerPop').hidden = !$('#layerPop').hidden; layoutCtrl(); });
     $('#layerPop').addEventListener('click', (e) => {
@@ -2485,7 +2633,7 @@
     $('#bLoc').addEventListener('click', locate);
     $('#bNorth').addEventListener('click', resetNorth);
     $('#bSet').addEventListener('click', () => openSettings());
-    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; $('#follow').hidden = true; if (S.nav.last) onPosition(S.nav.last, null, null); } });
+    $('#follow').addEventListener('click', () => { if (S.nav) { S.nav.follow = true; S.nav.camReady = false; $('#follow').hidden = true; if (S.nav.last) onPosition(S.nav.last, null, null); } });
 
     // 設定
     $('#kSave').addEventListener('click', saveKey);
@@ -2498,6 +2646,7 @@
       const ok = await checkRelay(true);
       if (ok) { S.trafficUrl = null; if (!LS.getItem('basemap')) basemap = 'tomtom'; applyBase(); if (S.county) { const c = S.county.code; S.county = null; selectCounty(c); } else showHome(); }
     });
+    $('#gCheck').addEventListener('click', checkGoogle);
     $('#gSave').addEventListener('click', () => {
       const k = $('#gKey').value.trim(), id = $('#gMapId').value.trim();
       if (k && !/^AIza[\w-]{30,}$/.test(k)) { $('#gMsg').textContent = '金鑰格式不對：Google 金鑰是 AIza 開頭、約 39 個字。'; $('#gMsg').className = 'fine err'; return; }

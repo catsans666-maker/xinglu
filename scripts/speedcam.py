@@ -1,12 +1,13 @@
 """每天把警政署「測速執法設置點」（data.gov.tw 7320）與國道固定式測速（13940）轉成 data/speedcam.json。
 網頁直接讀同網站的 JSON，不用中繼站，也沒有跨網域問題。"""
-import csv, io, json, os, re, sys, time, urllib.request
+import csv, io, json, os, re, sys, time, urllib.parse, urllib.request, zipfile
 
 UA = {'User-Agent': 'xinglu-speedcam/1.0 (+https://github.com/catsans666-maker/xinglu)'}
 DATASETS = ['7320', '13940']
 dbg = []
 
 def get(url, tries=3):
+    url = urllib.parse.quote(url, safe=':/?=&%#+,;@')   # 網址裡有中文檔名
     for i in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
@@ -97,6 +98,16 @@ def main():
             b = get(u)
             if not b:
                 continue
+            if b[:2] == b'PK':   # 壓縮檔：取裡面的 CSV
+                try:
+                    z = zipfile.ZipFile(io.BytesIO(b))
+                    names = [n for n in z.namelist() if n.lower().endswith('.csv')]
+                    dbg.append(f'{u} 壓縮檔內容: {z.namelist()}')
+                    if not names:
+                        continue
+                    b = z.read(names[0])
+                except zipfile.BadZipFile:
+                    continue
             text = decode(b)
             if text.lstrip().startswith(('<', '{', '[')):
                 dbg.append(f'{u} 不是 CSV：{text[:200]}')

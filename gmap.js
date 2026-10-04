@@ -283,6 +283,7 @@
       c = c ? this._padCenter(c, gz, heading, o.padding) : [cur.lng, cur.lat];
       return { c, gz, heading, tilt };
     }
+    isMoving() { return !!this._anim; }
     _stopAnim() { if (this._anim) { cancelAnimationFrame(this._anim); this._anim = null; } }
     jumpTo(o) { this._stopAnim(); const t = this._target(o); this._g.moveCamera({ center: LL(t.c), zoom: t.gz, heading: t.heading, tilt: t.tilt }); return this; }
     easeTo(o) {

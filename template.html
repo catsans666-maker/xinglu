@@ -143,6 +143,14 @@ svg { display: block; }
 .pmeta .shut { color: #ff3b30; font-weight: 600; }
 .pphoto { width: 100%; height: 150px; object-fit: cover; border-radius: 14px; margin: 8px 0 2px; background: var(--cell); }
 .kind { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.ghelp { margin: -2px 16px 14px; font-size: 13.5px; color: var(--ink2); }
+.ghelp summary { color: var(--blue); cursor: pointer; padding: 4px 0; }
+.ghelp ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.6; }
+.ghelp li { margin-bottom: 6px; }
+.ghelp code { font-size: 12.5px; background: var(--cell); padding: 1px 5px; border-radius: 5px; user-select: all; }
+#gMsg .ok { color: #34c759; } #gMsg .bad { color: #ff3b30; }
+/* iOS 26.0 主畫面 App：畫面底部會空一條（Safari 26.1 修好）；地圖用最大可視高度蓋滿 */
+@media (display-mode: standalone) { #map { bottom: auto; height: 100lvh; } }
 
 /* 右上：轉彎卡 */
 #turn {
@@ -678,8 +686,19 @@ body { font-size: 17px; letter-spacing: -.01em; }
       <label class="cell"><span class="lb">API 金鑰</span><input id="gKey" type="text" placeholder="AIza…" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <label class="cell"><span class="lb">Map ID</span><input id="gMapId" type="text" placeholder="選填（要旋轉、傾斜才需要）" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <button class="cell act" id="gSave">儲存並重新載入</button>
+      <button class="cell act" id="gCheck">檢查 Google 設定</button>
     </div>
     <p id="gMsg" class="fine">有 Google 金鑰：地圖、店家、街景、大眾運輸與機車路線都用 Google。清空＝改回開放地圖。</p>
+    <details class="ghelp"><summary>怎麼申請 Google 金鑰（約 10 分鐘）</summary>
+      <ol>
+        <li>打開 <a href="https://console.cloud.google.com/google/maps-apis/start" target="_blank" rel="noopener">Google Maps Platform 開始使用</a>，用 Google 帳號登入，照畫面建立專案、<b>綁信用卡</b>（每月免費額度內不收錢，綁卡是 Google 規定）。</li>
+        <li>啟用三個 API（點了按「啟用」）：<a href="https://console.cloud.google.com/apis/library/maps-backend.googleapis.com" target="_blank" rel="noopener">Maps JavaScript API</a>、<a href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noopener">Places API (New)</a>、<a href="https://console.cloud.google.com/apis/library/routes.googleapis.com" target="_blank" rel="noopener">Routes API</a>。</li>
+        <li>到 <a href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" rel="noopener">金鑰與憑證</a> 點你的 API 金鑰 →「應用程式限制」選<b>網站</b>，加入 <code id="gOrigin"></code> →「API 限制」勾上面三個 → 儲存。</li>
+        <li>複製金鑰（AIza 開頭）貼到上面，按「儲存並重新載入」，再按「檢查 Google 設定」。</li>
+        <li>選填：<a href="https://console.cloud.google.com/google/maps-apis/studio/maps" target="_blank" rel="noopener">地圖管理</a> → 建立 Map ID（JavaScript、向量、勾傾斜和旋轉）→ 貼到 Map ID。導航時地圖才能轉向、傾斜。</li>
+        <li>建議：<a href="https://console.cloud.google.com/google/maps-apis/quotas" target="_blank" rel="noopener">配額</a> 每個 API 設每日上限，帳單設預算警示。</li>
+      </ol>
+    </details>
     <h3>中繼站</h3>
     <div class="group">
       <label class="cell"><span class="lb">網址</span><input id="relay" type="url" placeholder="https://….workers.dev" autocomplete="off" spellcheck="false" autocapitalize="off"></label>

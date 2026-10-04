@@ -178,3 +178,10 @@ e2e.py         Playwright 端到端測試（地圖程式庫用替身、TDX 用�
 
 ### 測試
 - `e2e_google.py` 用 `gstub.js`（假 google.maps）跑 Google 模式：載入參數、深淺色、衛星、按搜尋才查、資料卡、街景、五種路線、轉乘步驟、TDX 即時、測速提醒、點店家、公車號碼搜尋。
+
+## 15. 平順定位、跟隨、Google 檢查（2026/10/4 傍晚）
+- 藍點：GPS 每筆用動畫補間（時間＝兩筆間隔，上限 1.2 秒），方向做平滑；鏡頭跟隨在同一個 requestAnimationFrame 裡 jumpTo，跟藍點同步。導航只有一開始（或按「回到導航」）用 easeTo 轉到導航視角，之後每格 jumpTo。
+- 打開定位後預設「跟著你」；拖地圖就停；程式要把地圖移去別處（搜尋結果、路線、站點）時自動停止跟隨（guardCamera 包住 easeTo/flyTo/fitBounds）。
+- Google 錯誤：攔 console 的「Google Maps JavaScript API error: XxxMapError」翻成白話；Places／Routes 錯誤用 gHint 翻。設定頁「檢查 Google 設定」逐項測三個 API（用最便宜的請求），附申請步驟與直接連結。
+- iOS 26.0 主畫面 App 收鍵盤後底部空一條（Apple 在 Safari 26.1 修好）：standalone 時地圖用 100lvh，收鍵盤時 scrollTo(0,0)。
+- 國道測速資料是 zip（檔名有中文）：腳本改成網址編碼＋解壓。
