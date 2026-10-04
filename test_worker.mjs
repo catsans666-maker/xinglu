@@ -58,6 +58,13 @@ r = await W.fetch(req('/tomtom/evil/1/2/3.png', O), env, ctx);
 assert.strictEqual(r.status, 400);
 r = await W.fetch(new Request('https://w.dev/tdx/v2/a', { method: 'OPTIONS', headers: O }), env, ctx);
 assert.strictEqual(r.status, 204);
+// TomTom 底圖
+r = await W.fetch(req('/tomtom-map/night/10/857/438.png', { Referer: 'https://catsans666-maker.github.io/xinglu/' }), env, ctx);
+assert.strictEqual(r.status, 200);
+const tm = calls.find((c) => c.url.includes('/map/1/tile/basic/night/10/857/438.png'));
+assert.ok(tm && tm.url.includes('language=zh-TW') && tm.url.includes('key=tt'));
+r = await W.fetch(req('/tomtom-map/evil/1/1/1.png', O), env, ctx);
+assert.strictEqual(r.status, 400);
 // 網頁本身
 r = await W.fetch(req('/'), env, ctx);
 assert.strictEqual(r.status, 200); assert.ok(r.headers.get('content-type').startsWith('text/html'));

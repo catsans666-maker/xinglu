@@ -1158,9 +1158,18 @@ body { font-size: 17px; letter-spacing: -.01em; }
   // ---- TomTom 即時路況圖磚（Traffic Flow raster，版本 4） ----
   function tomtomFlowUrl(key, dark) {
     if (!key) return null;
-    return `https://api.tomtom.com/traffic/map/4/tile/flow/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=256`;
+    return `https://api.tomtom.com/traffic/map/4/tile/flow/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512`;
   }
 
+  // TomTom 底圖（Map Display raster）：中文標籤、512px 圖塞進 256 格＝手機上清楚；view=Unified（中立畫法）
+  function tomtomMapUrl(key, dark) {
+    if (!key) return null;
+    return `https://api.tomtom.com/map/1/tile/basic/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512&language=zh-TW&view=Unified`;
+  }
+  function tomtomMapRelayUrl(relay, dark) {
+    if (!relay) return null;
+    return `${relay.replace(/\/$/, '')}/tomtom-map/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png`;
+  }
   function tomtomRelayUrl(relay, dark) {
     if (!relay) return null;
     return `${relay.replace(/\/$/, '')}/tomtom/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png`;
@@ -1170,7 +1179,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     COUNTIES, METRO_OPS, EP, BASE, TOKEN_URL,
     normTW, zh, ymd, addressInCounty, wktToGeometry, busEtaText, thsrUpcoming, createClient, pos, pointsFC,
     dist, distToLine, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
-    inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl,
+    inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl, tomtomMapUrl, tomtomMapRelayUrl,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   else root.Core = Core;
@@ -1282,12 +1291,16 @@ body { font-size: 17px; letter-spacing: -.01em; }
   //   三種底圖都放在同一個樣式裡，切換只改顯示，不必重載交通圖層
   const NLSC = (layer) => `https://wmts.nlsc.gov.tw/wmts/${layer}/default/GoogleMapsCompatible/{z}/{y}/{x}`;
   const BASEMAPS = {
+    tomtom: { name: 'TomTom 地圖', note: '商業圖資・最新、全中文、深色有夜間版', attr: '© TomTom' },
     emap: { name: '臺灣通用電子地圖', note: '內政部國土測繪中心・資料較新', attr: '© 內政部國土測繪中心' },
     photo: { name: '正射航照（衛星）', note: '內政部國土測繪中心', attr: '© 內政部國土測繪中心' },
     vector: { name: '向量地圖', note: 'OpenStreetMap・旋轉時字保持正、深色好看', attr: '© OpenStreetMap · OpenFreeMap' },
     osm: { name: 'OpenStreetMap', note: '全球開放地圖', attr: '© OpenStreetMap' },
   };
-  const RASTERS = ['emap', 'photo', 'osm'];
+  const RASTERS = ['tomtom', 'emap', 'photo', 'osm'];
+  // TomTom 底圖：有自己的 TomTom 金鑰或中繼站才有
+  const hasTT = () => !!(LS.getItem('tt.key') || relayUrl());
+  const ttMapUrl = (dark) => (LS.getItem('tt.key') ? C.tomtomMapUrl(LS.getItem('tt.key'), dark) : C.tomtomMapRelayUrl(relayUrl(), dark));
   const BASE_STYLE = {
     version: 8,
     glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
@@ -1304,7 +1317,8 @@ body { font-size: 17px; letter-spacing: -.01em; }
     ],
   };
   let hasGlyphs = true, map;
-  let basemap = BASEMAPS[LS.getItem('basemap')] ? LS.getItem('basemap') : 'emap';
+  // 沒選過底圖：有 TomTom 就用 TomTom（最新），沒有就用國土測繪
+  let basemap = BASEMAPS[LS.getItem('basemap')] ? LS.getItem('basemap') : (hasTT() ? 'tomtom' : 'emap');
   // 「旋轉或深色時自動換向量圖」：國土測繪是圖片地圖，地圖一轉字就跟著轉、深色只能反轉顏色；向量圖沒有這兩個問題
   let autoVec = LS.getItem('autoVec') !== '0';
   S.vecIds = []; S.vecHidden = new Set(); S.effBase = null; S.rotVec = false;
@@ -1316,6 +1330,11 @@ body { font-size: 17px; letter-spacing: -.01em; }
   const VEC_URL = 'https://tiles.openfreemap.org/styles/liberty';
   async function loadStyle() {
     const st = JSON.parse(JSON.stringify(BASE_STYLE));
+    if (hasTT()) {
+      S.ttMapUrl = ttMapUrl(isDark());
+      st.sources.ttmap = { type: 'raster', tiles: [S.ttMapUrl], tileSize: 256, maxzoom: 22 };
+      st.layers.splice(1, 0, { id: 'bm-tomtom', type: 'raster', source: 'ttmap', layout: { visibility: 'none' } });
+    }
     // 向量圖（OpenFreeMap）併進同一個樣式，預設隱藏；載不到就只用國土測繪
     try {
       const r = await fetch(VEC_URL);
@@ -1352,17 +1371,33 @@ body { font-size: 17px; letter-spacing: -.01em; }
   // 實際要顯示的底圖：使用者選的，再套「旋轉／深色自動換向量圖」
   function effBase() {
     const hasVec = S.vecIds.length > 0;
-    if (basemap === 'vector') return hasVec ? 'vector' : 'emap';
-    if (basemap === 'photo' || !hasVec || !autoVec) return basemap;
+    const b = basemap === 'tomtom' && !hasTT() ? 'emap' : basemap;
+    if (b === 'vector') return hasVec ? 'vector' : 'emap';
+    if (b === 'photo' || !hasVec || !autoVec) return b;
+    if (b === 'tomtom') return S.rotVec ? 'vector' : 'tomtom';   // TomTom 深色有夜間版，不必換
     if (isDark() || S.rotVec) return 'vector';
-    return basemap;
+    return b;
+  }
+  // TomTom 底圖圖層：金鑰剛填好、或深淺色切換（main↔night）時重建
+  function ensureTomTomBase() {
+    if (!map || !map.getLayer('bm-emap')) return;
+    const url = hasTT() ? ttMapUrl(isDark()) : null;
+    if (url && map.getSource('ttmap') && S.ttMapUrl === url) return;
+    const wasVisible = S.effBase === 'tomtom';
+    if (map.getLayer('bm-tomtom')) map.removeLayer('bm-tomtom');
+    if (map.getSource('ttmap')) map.removeSource('ttmap');
+    S.ttMapUrl = url;
+    if (!url) return;
+    map.addSource('ttmap', { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 22 });
+    map.addLayer({ id: 'bm-tomtom', type: 'raster', source: 'ttmap', layout: { visibility: wasVisible ? 'visible' : 'none' } }, 'bm-emap');
   }
   function applyBase() {
     if (!map || !map.getLayer('bm-emap')) return;
+    ensureTomTomBase();
     const eff = effBase();
     if (eff !== S.effBase) {
       S.effBase = eff;
-      RASTERS.forEach((b) => map.setLayoutProperty('bm-' + b, 'visibility', b === eff ? 'visible' : 'none'));
+      RASTERS.forEach((b) => { if (map.getLayer('bm-' + b)) map.setLayoutProperty('bm-' + b, 'visibility', b === eff ? 'visible' : 'none'); });
       S.vecIds.forEach((id) => { if (map.getLayer(id) && !S.vecHidden.has(id)) map.setLayoutProperty(id, 'visibility', eff === 'vector' ? 'visible' : 'none'); });
     }
     updAttr();
@@ -1386,7 +1421,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     const parts = [BASEMAPS[S.effBase || basemap].attr];
     if (S.traffic && map?.getLayer('traffic')) parts.push('© TomTom');
     parts.push('TDX');
-    $('#attr').textContent = parts.join(' · ');
+    $('#attr').textContent = [...new Set(parts)].join(' · ');
   }
 
   // 深色模式：電子地圖用「亮度反轉＋色相轉 180°」做成深色版（只在關掉自動向量圖時才會用到）
@@ -1858,7 +1893,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
     $('#layerPop').innerHTML = Object.keys(LAYER_NAMES).map((k) => `<button class="lrow" data-k="${k}" role="switch" aria-checked="${S.layers[k]}"><i class="dot d-${k}"></i><span class="grow">${LAYER_NAMES[k]}</span>${statusBadge(k)}<span class="sw ${S.layers[k] ? 'on' : ''}"></span></button>`).join('')
       + `<button class="lrow" data-traffic="1" role="switch" aria-checked="${S.traffic}"><i class="dot d-traffic"></i><span class="grow">即時路況<small class="lnote">${trafficOk() ? 'TomTom・綠順 黃慢 紅塞' : '要先在設定填 TomTom 金鑰'}</small></span><span class="sw ${S.traffic ? 'on' : ''}"></span></button>`
       + '<div class="lhead">底圖</div>'
-      + Object.entries(BASEMAPS).filter(([k]) => k !== 'vector' || S.vecIds.length).map(([k, b]) => `<button class="lrow" data-bm="${k}" role="radio" aria-checked="${k === basemap}"><span class="grow">${b.name}<small class="lnote">${k === basemap && auto ? auto : b.note}</small></span>${k === basemap ? '<span class="chk">✓</span>' : ''}</button>`).join('')
+      + Object.entries(BASEMAPS).filter(([k]) => (k !== 'vector' || S.vecIds.length) && (k !== 'tomtom' || hasTT())).map(([k, b]) => `<button class="lrow" data-bm="${k}" role="radio" aria-checked="${k === basemap}"><span class="grow">${b.name}<small class="lnote">${k === basemap && auto ? auto : b.note}</small></span>${k === basemap ? '<span class="chk">✓</span>' : ''}</button>`).join('')
       + (S.vecIds.length ? `<button class="lrow" data-auto="1" role="switch" aria-checked="${autoVec}"><span class="grow">旋轉或深色時自動換向量圖<small class="lnote">圖片地圖一轉字就倒，深色只能反轉顏色</small></span><span class="sw ${autoVec ? 'on' : ''}"></span></button>` : '');
   }
   function toggleLayer(k) {
@@ -3251,7 +3286,7 @@ body { font-size: 17px; letter-spacing: -.01em; }
       if (v && !/^https:\/\//.test(v)) { $('#relayMsg').textContent = '網址要以 https:// 開頭。'; $('#relayMsg').className = 'fine err'; return; }
       if (v) LS.setItem('relay', v); else LS.removeItem('relay');
       const ok = await checkRelay(true);
-      if (ok) { S.trafficUrl = null; applyTraffic(); if (S.county) { const c = S.county.code; S.county = null; selectCounty(c); } else showHome(); }
+      if (ok) { S.trafficUrl = null; if (!LS.getItem('basemap')) basemap = 'tomtom'; applyBase(); if (S.county) { const c = S.county.code; S.county = null; selectCounty(c); } else showHome(); }
     });
     $('#ttSave').addEventListener('click', async () => {
       const v = $('#ttKey').value.trim();
@@ -3261,6 +3296,8 @@ body { font-size: 17px; letter-spacing: -.01em; }
       if (!ok) { $('#ttMsg').textContent = '測試失敗：金鑰錯誤、額度用完，或沒有網路。'; $('#ttMsg').className = 'fine err'; return; }
       LS.setItem('tt.key', v);
       S.traffic = true; LS.setItem('traffic', '1'); S.trafficUrl = null;
+      if (!LS.getItem('basemap')) basemap = 'tomtom';
+      applyBase();
       applyTraffic(); renderLayerPop();
       $('#ttMsg').textContent = '連線成功，已開啟即時路況（圖層選單可關）。'; $('#ttMsg').className = 'fine okc';
     });

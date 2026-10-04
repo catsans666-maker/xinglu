@@ -44,8 +44,12 @@ const C = require('./core.js');
   assert.strictEqual(C.fmtAddr(null), '');
   // TomTom
   assert.strictEqual(C.tomtomFlowUrl('', false), null);
-  assert.strictEqual(C.tomtomFlowUrl('ab c', false), 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=ab%20c&tileSize=256');
+  assert.strictEqual(C.tomtomFlowUrl('ab c', false), 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=ab%20c&tileSize=512');
   assert.ok(C.tomtomFlowUrl('k', true).includes('/relative0-dark/'));
+  assert.strictEqual(C.tomtomMapUrl('k', false), 'https://api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=k&tileSize=512&language=zh-TW&view=Unified');
+  assert.ok(C.tomtomMapUrl('k', true).includes('/basic/night/'));
+  assert.strictEqual(C.tomtomMapUrl('', true), null);
+  assert.strictEqual(C.tomtomMapRelayUrl('https://r.dev/', true), 'https://r.dev/tomtom-map/night/{z}/{x}/{y}.png');
   // 429：等一下重試成功、通知等待秒數、重試用完才報錯
   const store = new Map();
   const ls = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };

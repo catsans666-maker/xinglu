@@ -225,12 +225,17 @@ with sync_playwright() as pw:
         state['tt_ok'] = True
         pg.fill('#ttKey','goodkey'); pg.click('#ttSave'); pg.wait_for_timeout(800)
         check('連線成功' in pg.inner_text('#ttMsg'), 'TomTom 金鑰測試成功')
+        bm = pg.evaluate("window.__map.src.ttmap && window.__map.src.ttmap.opt.tiles[0]") or ''
+        check(('/basic/night/' if scheme=='dark' else '/basic/main/') in bm and 'language=zh-TW' in bm, 'TomTom 底圖：中文、深色用夜間版')
+        check(vis(pg,'bm-tomtom')=='visible' and vis(pg,'bm-emap')=='none' and vis(pg,'v-water')=='none', '填好 TomTom 金鑰 → 底圖自動換成 TomTom')
+        order0 = pg.evaluate("window.__map.order")
+        check(order0.index('bm-tomtom') < order0.index('route-case'), 'TomTom 底圖在交通圖層下面')
         pg.click('[data-close="setDlg"]')
         tiles = pg.evaluate("window.__map.src.traffic && window.__map.src.traffic.opt.tiles[0]") or ''
         check(('relative0-dark' if scheme=='dark' else '/relative0/') in tiles and 'key=goodkey' in tiles, '路況圖層網址（深淺色）')
         order = pg.evaluate("window.__map.order")
         check(order.index('traffic') < order.index('route-case') and vis(pg,'traffic')=='visible', '路況壓在路線與站點下面')
-        check('TomTom' in pg.inner_text('#attr'), '版權文字加上 TomTom')
+        check(pg.inner_text('#attr').count('TomTom')==1, '版權文字有 TomTom（不重複）')
         pg.click('#bLayers'); pg.wait_for_timeout(200)
         pg.click('#layerPop [data-traffic]'); pg.wait_for_timeout(100)
         check(vis(pg,'traffic')=='none', '圖層選單可關路況')

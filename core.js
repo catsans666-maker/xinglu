@@ -469,9 +469,18 @@
   // ---- TomTom 即時路況圖磚（Traffic Flow raster，版本 4） ----
   function tomtomFlowUrl(key, dark) {
     if (!key) return null;
-    return `https://api.tomtom.com/traffic/map/4/tile/flow/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=256`;
+    return `https://api.tomtom.com/traffic/map/4/tile/flow/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512`;
   }
 
+  // TomTom 底圖（Map Display raster）：中文標籤、512px 圖塞進 256 格＝手機上清楚；view=Unified（中立畫法）
+  function tomtomMapUrl(key, dark) {
+    if (!key) return null;
+    return `https://api.tomtom.com/map/1/tile/basic/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512&language=zh-TW&view=Unified`;
+  }
+  function tomtomMapRelayUrl(relay, dark) {
+    if (!relay) return null;
+    return `${relay.replace(/\/$/, '')}/tomtom-map/${dark ? 'night' : 'main'}/{z}/{x}/{y}.png`;
+  }
   function tomtomRelayUrl(relay, dark) {
     if (!relay) return null;
     return `${relay.replace(/\/$/, '')}/tomtom/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png`;
@@ -481,7 +490,7 @@
     COUNTIES, METRO_OPS, EP, BASE, TOKEN_URL,
     normTW, zh, ymd, addressInCounty, wktToGeometry, busEtaText, thsrUpcoming, createClient, pos, pointsFC,
     dist, distToLine, alongLine, bearing, fmtDist, fmtDur, maneuverText, parseYouTube, weatherInfo,
-    inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl,
+    inPolygon, countyAt, metroAdultFare, busFareInfo, metroTravel, fmtAddr, tomtomFlowUrl, tomtomRelayUrl, tomtomMapUrl, tomtomMapRelayUrl,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   else root.Core = Core;

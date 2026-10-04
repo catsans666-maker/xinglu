@@ -13,7 +13,7 @@ def handle2(route):
         seen['relay'].append(p.path)
         if p.path=='/health':
             return route.fulfill(body=json.dumps({'tdx':True,'tomtom':not seen['health_missing']}), content_type='application/json', headers=hdr)
-        if p.path.startswith('/tomtom/'): return route.fulfill(body=PNG1, content_type='image/png', headers=hdr)
+        if p.path.startswith('/tomtom'): return route.fulfill(body=PNG1, content_type='image/png', headers=hdr)
         if p.path.startswith('/tdx/'):
             q={k:v[0] for k,v in parse_qs(p.query).items()}
             r=tdx('/api/basic'+unquote(p.path)[4:], q)
@@ -46,6 +46,8 @@ with sync_playwright() as pw:
     tiles=pg.evaluate("window.__map.src.traffic && window.__map.src.traffic.opt.tiles[0]") or ''
     check(tiles.startswith(RELAY+'/tomtom/relative0/'), '即時路況預設開、走中繼站（網址不含金鑰）')
     check('key=' not in tiles, '路況網址沒有金鑰')
+    bm=pg.evaluate("window.__map.src.ttmap && window.__map.src.ttmap.opt.tiles[0]") or ''
+    check(bm.startswith(RELAY+'/tomtom-map/main/') and pg.evaluate("window.__map.ly['bm-tomtom'].vis")=='visible', '中繼站模式：預設底圖就是 TomTom（經中繼站）')
     pg.click('#bSet'); pg.wait_for_timeout(300)
     check('經過中繼站' in pg.inner_text('#kMsg'), '設定頁說明目前用中繼站')
     pg.click('#relaySave'); pg.wait_for_timeout(800)

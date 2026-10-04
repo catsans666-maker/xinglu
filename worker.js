@@ -7,6 +7,7 @@
  * 路徑：
  *   /tdx/v2/...                → https://tdx.transportdata.tw/api/basic/v2/...
  *   /tomtom/{style}/{z}/{x}/{y}.png → TomTom 即時路況圖磚
+ *   /tomtom-map/{main|night}/{z}/{x}/{y}.png → TomTom 底圖（中文）
  *   /health                    → 檢查金鑰有沒有設好
  *   /                          → 網頁本身（從 GitHub 抓最新的 index.html），所以這個網址就是行路台灣
  */
@@ -80,7 +81,7 @@ async function handleTomTom(url, request, env, ctx) {
   if (!env.TOMTOM_KEY) return new Response('no key', { status: 500 });
   const m = url.pathname.match(/^\/tomtom\/(relative0|relative0-dark|relative|absolute)\/(\d+)\/(\d+)\/(\d+)\.png$/);
   if (!m) return new Response('bad path', { status: 400 });
-  const target = `https://api.tomtom.com/traffic/map/4/tile/flow/${m[1]}/${m[2]}/${m[3]}/${m[4]}.png?key=${encodeURIComponent(env.TOMTOM_KEY)}&tileSize=256`;
+  const target = `https://api.tomtom.com/traffic/map/4/tile/flow/${m[1]}/${m[2]}/${m[3]}/${m[4]}.png?key=${encodeURIComponent(env.TOMTOM_KEY)}&tileSize=512`;
   return cached(request, ctx, 60, async () => {
     const r = await fetch(target, { headers: { Referer: SITE } });   // 金鑰有開網域白名單也能用
     return new Response(r.body, { status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'image/png' } });
@@ -95,6 +96,17 @@ async function handlePage(request, ctx) {
   });
 }
 
+async function handleTomTomMap(url, request, env, ctx) {
+  if (!env.TOMTOM_KEY) return new Response('no key', { status: 500 });
+  const m = url.pathname.match(/^\/tomtom-map\/(main|night)\/(\d+)\/(\d+)\/(\d+)\.png$/);
+  if (!m) return new Response('bad path', { status: 400 });
+  const target = `https://api.tomtom.com/map/1/tile/basic/${m[1]}/${m[2]}/${m[3]}/${m[4]}.png?key=${encodeURIComponent(env.TOMTOM_KEY)}&tileSize=512&language=zh-TW&view=Unified`;
+  return cached(request, ctx, 86400, async () => {
+    const r = await fetch(target, { headers: { Referer: SITE } });
+    return new Response(r.body, { status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'image/png' } });
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -102,7 +114,7 @@ export default {
     const origin = request.headers.get('Origin') || '';
     const sites = [...ALLOWED_ORIGINS, url.origin];   // 網頁就放在中繼站本身時，同網址也算自己人
     const allowed = sites.includes(origin);
-    const isTile = url.pathname.startsWith('/tomtom/');
+    const isTile = url.pathname.startsWith('/tomtom/') || url.pathname.startsWith('/tomtom-map/');
     // 同網址的請求、<img> 載入的圖磚，常常不帶 Origin；改看 Referer
     const ref = request.headers.get('Referer') || '';
     const okRef = sites.some((o) => ref.startsWith(o + '/'));
@@ -116,6 +128,7 @@ export default {
     let res;
     try {
       if (url.pathname.startsWith('/tdx/')) res = await handleTdx(url, request, env, ctx);
+      else if (url.pathname.startsWith('/tomtom-map/')) res = await handleTomTomMap(url, request, env, ctx);
       else if (isTile) res = await handleTomTom(url, request, env, ctx);
       else res = json({ error: '找不到' }, 404);
     } catch (e) {
