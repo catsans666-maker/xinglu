@@ -841,7 +841,7 @@
   // ======================================================
   const sheet = () => $('#sheet');
   function detentPx(d) {
-    const vh = window.innerHeight;
+    const vh = window.innerHeight - (parseFloat(document.documentElement.style.getPropertyValue('--yth')) || 0);
     if (d === 'peek' && document.body.classList.contains('navigating')) return navBarH();
     if (d === 'peek') return $('#srow').offsetHeight + 18 + 6 + (parseFloat(getComputedStyle(sheet()).paddingBottom) || 0);
     if (d === 'full') return Math.round(vh * 0.86);
@@ -2400,11 +2400,25 @@
   // ======================================================
   const YT = { player: null, apiP: null, recent: [] };
   try { YT.recent = JSON.parse(LS.getItem('yt.recent') || '[]'); } catch { YT.recent = []; }
-  const ytMode = () => { const m = LS.getItem('yt.mode') || 'auto'; return m === 'auto' ? (isMobileDevice ? 'pip' : 'embed') : m; };
+  // 自動＝分割畫面（YouTube 佔一塊，地圖用剩下的；網頁自己播，導航講話時可以壓低音量）
+  const ytMode = () => { const m = LS.getItem('yt.mode') || 'auto'; return m === 'auto' ? 'split' : m; };
+  YT.queue = []; YT.qi = -1; YT.open = false;
 
   function applyYtMode() {
-    const pip = ytMode() === 'pip';
+    const mode = ytMode();
+    const pip = mode === 'pip';
     const pipHidden = LS.getItem('pip.hide') === '1';
+    if (mode === 'split') {
+      document.body.classList.remove('pip', 'pip-left');
+      $('#pipZone').hidden = true;
+      $('#yt').hidden = !YT.open;
+      $('#ytFab').hidden = YT.open;
+      document.body.classList.toggle('ytsplit', YT.open);
+      updSplit();
+      setQMode(S.qMode);
+      return;
+    }
+    document.body.classList.remove('ytsplit'); updSplit();
     document.body.classList.toggle('pip', pip);
     document.body.classList.toggle('pip-left', LS.getItem('pip.side') === 'left');
     $('#pipZone').classList.toggle('playing', !!YT.pipPlaying);
@@ -2416,6 +2430,34 @@
       $('#ytFab').hidden = !$('#yt').hidden;
     }
     layoutYT();
+  }
+  // 分割畫面：量 YouTube 那塊多大，地圖、抽屜、按鈕跟著讓位
+  const splitSide = () => isWide() || window.matchMedia('(orientation: landscape)').matches;
+  function updSplit() {
+    const on = document.body.classList.contains('ytsplit');
+    const root = document.documentElement.style;
+    const w = on && splitSide() ? Math.round(Math.min(window.innerWidth * 0.42, 480)) : 0;
+    const h = on && !splitSide() ? Math.round($('#yt').getBoundingClientRect().height) : 0;
+    const was = root.getPropertyValue('--yth') + root.getPropertyValue('--ytw');
+    root.setProperty('--ytw', w + 'px'); root.setProperty('--yth', h + 'px');
+    if (was === (h + 'px') + (w + 'px')) return;
+    requestAnimationFrame(() => {
+      try { map?.resize?.(); } catch { /* 地圖還沒好 */ }
+      if (typeof setDetent === 'function' && !S.nav?.active) setDetent(sheet().dataset.d);
+      layoutCtrl();
+    });
+  }
+  function openYtPanel() {
+    YT.open = true;
+    $('#yt').hidden = false; $('#yt').classList.remove('mini');
+    if (!YT.player) { $('#ytPick').hidden = false; renderYtList(); }
+    applyYtMode();
+  }
+  function closeYtPanel() {
+    try { YT.player?.stopVideo(); } catch { /* 忽略 */ }
+    YT.open = false;
+    $('#yt').hidden = true; $('#ytFab').hidden = false;
+    applyYtMode();
   }
   function layoutYT() {
     const tall = document.body.classList.contains('sheet-tall');
@@ -2441,30 +2483,51 @@
     });
     return YT.apiP;
   }
-  async function playYt(item) {
+  function ytNav(step) {
+    const p = YT.player;
+    if (YT.cur?.listId && p?.nextVideo) { step > 0 ? p.nextVideo() : p.previousVideo(); return; }
+    const i = YT.qi + step;
+    if (i >= 0 && i < YT.queue.length) playYt(YT.queue[i], YT.queue, i);
+    else if (step > 0) toast('清單播完了，搜尋或貼連結再加');
+  }
+  function updYtNav() {
+    const has = !!(YT.cur?.listId || YT.queue.length > 1);
+    $('#ytPrev').hidden = !has; $('#ytNext').hidden = !has;
+  }
+  async function playYt(item, queue, idx) {
+    if (queue) { YT.queue = queue; YT.qi = idx ?? queue.indexOf(item); }
+    else if (!YT.queue.includes(item)) { YT.queue = [item]; YT.qi = 0; }
+    YT.cur = item;
+    if (ytMode() === 'split' && !YT.open) openYtPanel();
+    updYtNav();
     $('#ybox').hidden = false; $('#ytPick').hidden = true; $('#ytPlay').hidden = false;
     $('#yt').classList.remove('mini');
     try {
       const api = await loadYtApi();
       const vars = { playsinline: 1, rel: 0, modestbranding: 1, autoplay: 1 };
       if (item.listId) { vars.listType = 'playlist'; vars.list = item.listId; }
-      if (YT.player && YT.player.loadVideoById && item.videoId && !item.listId) { YT.player.loadVideoById(item.videoId); }
+      if (YT.player && YT.player.loadVideoById && item.videoId && !item.listId && !YT.player.__list) { YT.player.loadVideoById(item.videoId); }
       else {
         if (YT.player?.destroy) YT.player.destroy();
         $('#ybox').innerHTML = '<div id="ytPlayer"></div>';
         YT.player = new api.Player('ytPlayer', {
+          host: 'https://www.youtube.com',
           videoId: item.videoId, playerVars: vars,
           events: {
             onStateChange: (e) => {
               const d = YT.player.getVideoData ? YT.player.getVideoData() : {};
               if (d && d.title) { $('#ytTitle').textContent = d.title; remember({ videoId: d.video_id || item.videoId, listId: item.listId, title: d.title }); }
+              if (e.data === 0 && !YT.cur?.listId) ytNav(1);   // 播完自動下一首
+              if (e.data === 1) updSplit();
               $('#ytPlay').innerHTML = e.data === 1 ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
             },
             onError: (e) => toast(e.data === 150 || e.data === 101 ? '這部影片不允許嵌入播放' : e.data === 153 ? 'YouTube 要求網址來源（請放到 GitHub Pages 再開）' : 'YouTube 播放錯誤 ' + e.data),
           },
         });
       }
+      if (YT.player) YT.player.__list = !!item.listId;
       $('#ytTitle').textContent = item.title || 'YouTube';
+      setTimeout(updSplit, 50);
     } catch (e) { toast(e.message || String(e)); }
   }
   function remember(it) {
@@ -2476,19 +2539,26 @@
     const list = results || YT.recent;
     $('#ytList').innerHTML = list.length ? `<div class="list">${list.map((x, i) => `<button class="item" data-i="${i}">${x.videoId ? `<img src="https://i.ytimg.com/vi/${esc(x.videoId)}/default.jpg" alt="">` : ''}<span class="grow"><span class="t1">${esc(x.title || x.videoId || x.listId)}</span>${x.channel ? `<div class="t2">${esc(x.channel)}</div>` : ''}</span></button>`).join('')}</div>`
       : '<p class="fine">貼上影片或播放清單連結。在設定填 YouTube 搜尋金鑰後，也能直接打關鍵字搜尋。</p>';
-    $('#ytList').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => playYt(list[+b.dataset.i])));
+    $('#ytList').querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', () => playYt(list[+b.dataset.i], list, +b.dataset.i)));
   }
   async function ytSubmit() {
     const q = $('#ytQ').value.trim(); if (!q) return;
     const parsed = C.parseYouTube(q);
     if (parsed) { $('#ytQ').value = ''; return playYt(parsed); }
-    const key = LS.getItem('yt.key');
-    if (!key) { renderYtList(); toast('要用關鍵字搜尋，請先在設定填 YouTube 搜尋金鑰；或直接貼連結'); return; }
+    // 搜尋金鑰：設定裡的 YouTube 金鑰；沒填就用 Google 地圖那把（要在同一個專案啟用 YouTube Data API v3）
+    const key = LS.getItem('yt.key') || gCfg().key;
+    if (!key) { renderYtList(); toast('要用關鍵字搜尋，需要 Google 金鑰（啟用 YouTube Data API v3）；或直接貼連結'); return; }
     $('#ytList').innerHTML = '<p class="muted">搜尋中…</p>';
+    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=15&videoEmbeddable=true&regionCode=TW&relevanceLanguage=zh-Hant&q=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}`;
     try {
-      const j = await getJSON(`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&videoEmbeddable=true&q=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}`, 'YouTube 搜尋');
-      renderYtList((j.items || []).map((it) => ({ videoId: it.id.videoId, title: it.snippet.title, channel: it.snippet.channelTitle })));
-    } catch (e) { $('#ytList').innerHTML = `<p class="err">${esc(e.message)}（金鑰錯誤或今日額度用完）</p>`; }
+      const r = await fetch(url);
+      logExt('YouTube 搜尋', r.status);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(gHint({ message: JSON.stringify(j.error || j) }, 'YouTube Data API v3'));
+      const res = (j.items || []).map((it) => ({ videoId: it.id.videoId, title: it.snippet.title, channel: it.snippet.channelTitle }));
+      YT.results = res;
+      renderYtList(res);
+    } catch (e) { $('#ytList').innerHTML = `<p class="err">YouTube 搜尋失敗：${esc(e.message)}</p>`; }
   }
 
   // ======================================================
@@ -2722,13 +2792,28 @@
     $('#pipHide').addEventListener('click', () => { LS.setItem('pip.hide', '1'); applyYtMode(); });
     $('#ytFab').addEventListener('click', () => {
       if (ytMode() === 'pip') return openYouTubeApp();
+      if (ytMode() === 'split') return openYtPanel();
       $('#yt').hidden = false; $('#ytFab').hidden = true; $('#yt').classList.remove('mini'); renderYtList();
     });
     $('#ytForm').addEventListener('submit', (e) => { e.preventDefault(); ytSubmit(); });
-    $('#ytSwap').addEventListener('click', () => { $('#ytPick').hidden = !$('#ytPick').hidden; $('#yt').classList.remove('mini'); renderYtList(); });
+    $('#ytSwap').addEventListener('click', () => { $('#ytPick').hidden = !$('#ytPick').hidden; $('#yt').classList.remove('mini'); renderYtList(YT.results); updSplit(); });
     $('#ytSize').addEventListener('click', () => { const s = { s: 'm', m: 'l', l: 's' }[$('#yt').dataset.size] || 'm'; $('#yt').dataset.size = s; });
-    $('#ytMin').addEventListener('click', () => $('#yt').classList.toggle('mini'));
-    $('#ytClose').addEventListener('click', () => { try { YT.player?.stopVideo(); } catch { /* 忽略 */ } $('#yt').hidden = true; $('#ytFab').hidden = false; });
+    $('#ytMin').addEventListener('click', () => { $('#yt').classList.toggle('mini'); updSplit(); });
+    $('#ytPrev').addEventListener('click', () => ytNav(-1));
+    $('#ytNext').addEventListener('click', () => ytNav(1));
+    // 在 YouTube App 按「分享 → 複製連結」，回來按這個就播（iPhone 會問一次能不能貼上）
+    $('#ytPaste').addEventListener('click', async () => {
+      try {
+        const t = await navigator.clipboard.readText();
+        const it = C.parseYouTube((t.match(/https?:\/\/\S+/) || [t])[0]);
+        if (!it) { toast('剪貼簿裡不是 YouTube 連結'); return; }
+        playYt(it);
+      } catch { toast('讀不到剪貼簿：請允許貼上，或手動貼到下面的框'); }
+    });
+    new ResizeObserver(() => updSplit()).observe($('#yt'));
+    window.addEventListener('resize', () => updSplit());
+    $('#ytClose').addEventListener('click', () => {
+      if (ytMode() === 'split') return closeYtPanel(); try { YT.player?.stopVideo(); } catch { /* 忽略 */ } $('#yt').hidden = true; $('#ytFab').hidden = false; });
     $('#ytPlay').addEventListener('click', () => { const p = YT.player; if (!p?.getPlayerState) return; p.getPlayerState() === 1 ? p.pauseVideo() : p.playVideo(); });
 
     darkMQ.addEventListener?.('change', () => applyBase());

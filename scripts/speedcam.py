@@ -154,6 +154,25 @@ def main():
                 cams += got
                 srcs.append(ds)
                 break
+    # 手動放進 data/manual/ 的政府檔案（例如國道固定式測速：TGOS 擋國外主機，請使用者從台灣下載後放進來）
+    import glob
+    for fp in sorted(glob.glob('data/manual/*')):
+        try:
+            b = open(fp, 'rb').read()
+            files = []
+            if b[:2] == b'PK':
+                z = zipfile.ZipFile(io.BytesIO(b))
+                files = [(n, z.read(n)) for n in z.namelist() if n.lower().endswith('.csv')]
+            elif fp.lower().endswith('.csv'):
+                files = [(fp, b)]
+            for n, data in files:
+                got = parse(decode(data), 'manual:' + n)
+                dbg.append(f'手動檔 {n}: {len(got)} 筆')
+                cams += got
+                if got and 'manual' not in srcs:
+                    srcs.append('manual')
+        except Exception as ex:
+            dbg.append(f'手動檔 {fp} 失敗 {ex}')
     for c in cams:
         if len(c) < 6:
             c.append('g')   # 政府資料

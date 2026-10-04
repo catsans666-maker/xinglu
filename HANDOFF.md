@@ -191,3 +191,11 @@ e2e.py         Playwright 端到端測試（地圖程式庫用替身、TDX 用�
 - 國道固定式（13940）在 TGOS，GitHub 主機下載被擋（403）；改用開放街圖 Overpass 補（非官方），離政府資料 60 公尺內視為重複。
 - YouTube 子母畫面：iOS 小視窗位置網頁讀不到 → 預留區可切左右（⇆），抽屜讓出那一邊；從 YouTube App 回來後預留區變透明、不擋點地圖。
 - 向量地圖的店家（OSM poi_r1/r7/r20）提早 1.5 級顯示。台灣 OSM 店家本來就少，真正解法是 Google 金鑰。
+
+## 17. YouTube 分割畫面（2026/10/4 晚）
+- 播放方式預設改成「分割畫面」：按 YouTube 鈕 → 手機直放在下方整條、電腦／橫放在右邊一欄（42%，最多 480px）；地圖、抽屜、右側按鈕都讓位（CSS 變數 --yth／--ytw，ResizeObserver 量高度，map.resize()）。
+- 上一首／下一首（搜尋結果或最近播放當佇列；播放清單用 nextVideo）、播完自動下一首、「播放剛複製的 YouTube 連結」（讀剪貼簿）、縮成只剩控制列。
+- 搜尋金鑰沒填就用 Google 地圖金鑰（同專案要啟用 YouTube Data API v3）。
+- 限制：iPhone 鎖螢幕／切 App 時網頁內影片會暫停；要背景播放用「YouTube App 子母畫面」模式。
+- 國道測速：使用者從 data.gov.tw/dataset/13940 下載的檔放 data/manual/，每日流程自動合併。
+- 測試：e2e_yt.py。
