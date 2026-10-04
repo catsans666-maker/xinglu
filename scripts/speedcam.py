@@ -2,7 +2,7 @@
 網頁直接讀同網站的 JSON，不用中繼站，也沒有跨網域問題。"""
 import csv, io, json, os, re, sys, time, urllib.parse, urllib.request, zipfile
 
-UA = {'User-Agent': 'xinglu-speedcam/1.0 (+https://github.com/catsans666-maker/xinglu)'}
+UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Accept': '*/*', 'Referer': 'https://data.gov.tw/'}
 DATASETS = ['7320', '13940']
 dbg = []
 
