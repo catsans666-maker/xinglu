@@ -18,4 +18,4 @@ jobs:
           git config user.name "xinglu-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/
-          git diff --cached --quiet || (git commit -m "測速資料自動更新" && git push)
+          git diff --cached --quiet || (git commit -m "測速資料自動更新" && git pull --rebase origin main && git push)
