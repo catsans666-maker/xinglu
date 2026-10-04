@@ -7,9 +7,8 @@ dataset 13940 meta: {"help":"","success":true,"result":{"categoryService":"A00",
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
 GET https://www.tgos.tw/tgos/VirtualDir/Product/c2dd3a68-cafc-48fc-8a4a-7215ddc24cd3/1150720-%E5%9C%8B%E9%81%93%E5%85%AC%E8%B7%AF%E5%9B%BA%E5%AE%9A%E5%BC%8F%E6%B8%AC%E9%80%9F%E7%85%A7%E7%9B%B8%E5%9C%B0%E9%BB%9E.zip 失敗 HTTP Error 403: Forbidden
-OSM https://overpass-api.de/api/interpreter 失敗 HTTP Error 504: Gateway Timeout
-OSM https://overpass.kumi.systems/api/interpreter: 0 筆
-開放街圖補進 0 筆
+OSM https://overpass-api.de/api/interpreter: 943 筆
+開放街圖補進 523 筆
 候選 106636: 國道公路警察局交岔路口重點違規錄影地點 | CSV https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/B633C50F-296A-44B0-BCE4-7D6DF3FDA5B9/resource/DC818BE8-4AD8-4AB7-9056-AEE39C47760C/download
 候選 178143: 嘉義縣警察局固定式測速照相設置地點 | CSV https://ws-tm.cyhg.gov.tw/001/Upload/1330/relfile/13620/248277/939333b3-dff4-4b72-b18a-d14f5983455f.csv
 候選 100856: 國道公路警察局闖紅燈照相地點 | CSV https://opdadm.moi.gov.tw/api/v1/no-auth/resource/api/dataset/EF974C67-917B-43DA-A49C-F1480EEEDB23/resource/C1EC920B-69C5-4A59-B965-2C15A5708C66/download
