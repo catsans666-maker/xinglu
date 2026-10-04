@@ -1,6 +1,6 @@
 """每天把警政署「測速執法設置點」（data.gov.tw 7320）與國道固定式測速（13940）轉成 data/speedcam.json。
 網頁直接讀同網站的 JSON，不用中繼站，也沒有跨網域問題。"""
-import csv, io, json, re, sys, time, urllib.request
+import csv, io, json, os, re, sys, time, urllib.request
 
 UA = {'User-Agent': 'xinglu-speedcam/1.0 (+https://github.com/catsans666-maker/xinglu)'}
 DATASETS = ['7320', '13940']
@@ -83,6 +83,7 @@ def parse(text, src):
     return out
 
 def main():
+    os.makedirs('data', exist_ok=True)
     cams, srcs = [], []
     for ds in DATASETS:
         for u in csv_urls(ds):
