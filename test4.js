@@ -24,7 +24,7 @@ const C = require('./core.js');
   reply = (url) => (n++ === 0 ? { status: 200, ok: true, json: async () => ({ access_token: 'T', expires_in: 9999 }) } : { status: 200, ok: true, json: async () => ['direct'] });
   assert.deepStrictEqual(await cl.get('/v2/c'), ['direct']);
   assert.ok(calls.at(-1).url.startsWith(C.BASE) && calls.at(-1).o.headers.authorization === 'Bearer T');
-  assert.strictEqual(C.tomtomRelayUrl('https://r.dev/', true), 'https://r.dev/tomtom/relative0-dark/{z}/{x}/{y}.png');
+  assert.strictEqual(C.tomtomRelayUrl('https://r.dev/', true), 'https://r.dev/tomtom/relative-delay/{z}/{x}/{y}.png');
   assert.strictEqual(C.tomtomRelayUrl('', false), null);
   console.log('中繼站用戶端測試通過');
 })().catch((e) => { console.error('失敗', e); process.exit(1); });

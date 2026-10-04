@@ -44,7 +44,7 @@ with sync_playwright() as pw:
     check(any(x.endswith('/tdx/v2/Rail/TRA/Station') for x in seen['relay']), 'TDX 呼叫走中繼站')
     check(seen['direct_tdx']==0, '完全沒直連 TDX')
     tiles=pg.evaluate("window.__map.src.traffic && window.__map.src.traffic.opt.tiles[0]") or ''
-    check(tiles.startswith(RELAY+'/tomtom/relative0/'), '即時路況預設開、走中繼站（網址不含金鑰）')
+    check(tiles.startswith(RELAY+'/tomtom/relative-delay/'), '即時路況預設開、走中繼站（網址不含金鑰）')
     check('key=' not in tiles, '路況網址沒有金鑰')
     bm=pg.evaluate("window.__map.src.ttmap && window.__map.src.ttmap.opt.tiles[0]") or ''
     check(bm.startswith(RELAY+'/tomtom-map/main/') and pg.evaluate("window.__map.ly['bm-tomtom'].vis")=='visible', '中繼站模式：預設底圖就是 TomTom（經中繼站）')

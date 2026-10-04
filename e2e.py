@@ -232,7 +232,7 @@ with sync_playwright() as pw:
         check(order0.index('bm-tomtom') < order0.index('route-case'), 'TomTom 底圖在交通圖層下面')
         pg.click('[data-close="setDlg"]')
         tiles = pg.evaluate("window.__map.src.traffic && window.__map.src.traffic.opt.tiles[0]") or ''
-        check(('relative0-dark' if scheme=='dark' else '/relative0/') in tiles and 'key=goodkey' in tiles, '路況圖層網址（深淺色）')
+        check('/relative-delay/' in tiles and 'key=goodkey' in tiles, '路況只畫變慢的路段')
         order = pg.evaluate("window.__map.order")
         check(order.index('traffic') < order.index('route-case') and vis(pg,'traffic')=='visible', '路況壓在路線與站點下面')
         check(pg.inner_text('#attr').count('TomTom')==1, '版權文字有 TomTom（不重複）')

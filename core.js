@@ -469,7 +469,7 @@
   // ---- TomTom 即時路況圖磚（Traffic Flow raster，版本 4） ----
   function tomtomFlowUrl(key, dark) {
     if (!key) return null;
-    return `https://api.tomtom.com/traffic/map/4/tile/flow/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512`;
+    return `https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}&tileSize=512&thickness=4`;
   }
 
   // TomTom 底圖（Map Display raster）：中文標籤、512px 圖塞進 256 格＝手機上清楚；view=Unified（中立畫法）
@@ -483,7 +483,7 @@
   }
   function tomtomRelayUrl(relay, dark) {
     if (!relay) return null;
-    return `${relay.replace(/\/$/, '')}/tomtom/${dark ? 'relative0-dark' : 'relative0'}/{z}/{x}/{y}.png`;
+    return `${relay.replace(/\/$/, '')}/tomtom/relative-delay/{z}/{x}/{y}.png`;
   }
 
   const Core = {

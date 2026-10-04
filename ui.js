@@ -297,7 +297,8 @@
     if (map.getLayer('traffic')) map.removeLayer('traffic');
     if (map.getSource('traffic')) map.removeSource('traffic');
     map.addSource('traffic', { type: 'raster', tiles: [url], tileSize: 256, minzoom: 0, maxzoom: 22 });
-    map.addLayer({ id: 'traffic', type: 'raster', source: 'traffic', minzoom: 7, paint: { 'raster-opacity': 0.92 } }, 'route-case');
+    // 只畫「比平常慢」的路段（黃／紅），順暢的路不畫綠線，地圖才不會被蓋滿；換縮放層級時淡入淡出
+    map.addLayer({ id: 'traffic', type: 'raster', source: 'traffic', minzoom: 7, paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 350 } }, 'route-case');
     S.trafficUrl = url; S.ttErr = false;
     return true;
   }
@@ -702,7 +703,7 @@
   function renderLayerPop() {
     const auto = S.effBase === 'vector' && basemap !== 'vector' ? `暫時改用向量地圖（${isDark() ? '深色模式' : '地圖旋轉中'}）` : '';
     $('#layerPop').innerHTML = Object.keys(LAYER_NAMES).map((k) => `<button class="lrow" data-k="${k}" role="switch" aria-checked="${S.layers[k]}"><i class="dot d-${k}"></i><span class="grow">${LAYER_NAMES[k]}</span>${statusBadge(k)}<span class="sw ${S.layers[k] ? 'on' : ''}"></span></button>`).join('')
-      + `<button class="lrow" data-traffic="1" role="switch" aria-checked="${S.traffic}"><i class="dot d-traffic"></i><span class="grow">即時路況<small class="lnote">${trafficOk() ? 'TomTom・綠順 黃慢 紅塞' : '要先在設定填 TomTom 金鑰'}</small></span><span class="sw ${S.traffic ? 'on' : ''}"></span></button>`
+      + `<button class="lrow" data-traffic="1" role="switch" aria-checked="${S.traffic}"><i class="dot d-traffic"></i><span class="grow">即時路況<small class="lnote">${trafficOk() ? 'TomTom・只標出變慢的路：黃慢、紅塞' : '要先在設定填 TomTom 金鑰'}</small></span><span class="sw ${S.traffic ? 'on' : ''}"></span></button>`
       + '<div class="lhead">底圖</div>'
       + Object.entries(BASEMAPS).filter(([k]) => (k !== 'vector' || S.vecIds.length) && (k !== 'tomtom' || hasTT())).map(([k, b]) => `<button class="lrow" data-bm="${k}" role="radio" aria-checked="${k === basemap}"><span class="grow">${b.name}<small class="lnote">${k === basemap && auto ? auto : b.note}</small></span>${k === basemap ? '<span class="chk">✓</span>' : ''}</button>`).join('')
       + (S.vecIds.length ? `<button class="lrow" data-auto="1" role="switch" aria-checked="${autoVec}"><span class="grow">旋轉或深色時自動換向量圖<small class="lnote">圖片地圖一轉字就倒，深色只能反轉顏色</small></span><span class="sw ${autoVec ? 'on' : ''}"></span></button>` : '');

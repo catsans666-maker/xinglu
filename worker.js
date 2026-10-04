@@ -79,9 +79,9 @@ async function handleTdx(url, request, env, ctx) {
 
 async function handleTomTom(url, request, env, ctx) {
   if (!env.TOMTOM_KEY) return new Response('no key', { status: 500 });
-  const m = url.pathname.match(/^\/tomtom\/(relative0|relative0-dark|relative|absolute)\/(\d+)\/(\d+)\/(\d+)\.png$/);
+  const m = url.pathname.match(/^\/tomtom\/(relative-delay|relative0|relative0-dark|relative|absolute)\/(\d+)\/(\d+)\/(\d+)\.png$/);
   if (!m) return new Response('bad path', { status: 400 });
-  const target = `https://api.tomtom.com/traffic/map/4/tile/flow/${m[1]}/${m[2]}/${m[3]}/${m[4]}.png?key=${encodeURIComponent(env.TOMTOM_KEY)}&tileSize=512`;
+  const target = `https://api.tomtom.com/traffic/map/4/tile/flow/${m[1]}/${m[2]}/${m[3]}/${m[4]}.png?key=${encodeURIComponent(env.TOMTOM_KEY)}&tileSize=512${m[1].startsWith('relative0') ? '' : '&thickness=4'}`;
   return cached(request, ctx, 60, async () => {
     const r = await fetch(target, { headers: { Referer: SITE } });   // 金鑰有開網域白名單也能用
     return new Response(r.body, { status: r.status, headers: { 'content-type': r.headers.get('content-type') || 'image/png' } });
