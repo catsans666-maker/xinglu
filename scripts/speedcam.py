@@ -94,9 +94,10 @@ OSM_DIR = {'N': 0, 'NNE': 22, 'NE': 45, 'ENE': 67, 'E': 90, 'ESE': 112, 'SE': 13
 
 def osm_cams():
     """開放街圖（OpenStreetMap）上的測速照相：補政府資料沒有的（主要是國道）。非官方，可能有漏或過時。"""
-    q = ('[out:json][timeout:180];area["ISO3166-1"="TW"][admin_level=2]->.a;'
-         '(node["highway"="speed_camera"](area.a);node["enforcement"="maxspeed"](area.a););out body;')
-    for ep in ('https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'):
+    bb = '(21.8,119.2,25.4,122.1)'   # 台灣本島＋澎湖
+    q = ('[out:json][timeout:180];(node["highway"="speed_camera"]%s;node["enforcement"="maxspeed"]%s;'
+         'node["enforcement"="average_speed"]%s;);out body;' % (bb, bb, bb))
+    for ep in ('https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass-api.de/api/interpreter'):
         try:
             req = urllib.request.Request(ep, data=urllib.parse.urlencode({'data': q}).encode(), headers=UA)
             with urllib.request.urlopen(req, timeout=200) as r:
@@ -116,7 +117,8 @@ def osm_cams():
                 name = t.get('name') or t.get('ref') or ''
                 out.append([round(e['lon'], 5), round(e['lat'], 5), lim if 10 <= lim <= 130 else 0, d, name[:60], 'o'])
             dbg.append(f'OSM {ep}: {len(out)} 筆')
-            return out
+            if out:
+                return out
         except Exception as ex:
             dbg.append(f'OSM {ep} 失敗 {ex}')
     return []
