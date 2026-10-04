@@ -90,6 +90,41 @@ def parse(text, src):
         out.append([round(x, 5), round(y, 5), lim, d[:20], addr[:60]])
     return out
 
+OSM_DIR = {'N': 0, 'NNE': 22, 'NE': 45, 'ENE': 67, 'E': 90, 'ESE': 112, 'SE': 135, 'SSE': 157, 'S': 180, 'SSW': 202, 'SW': 225, 'WSW': 247, 'W': 270, 'WNW': 292, 'NW': 315, 'NNW': 337}
+
+def osm_cams():
+    """開放街圖（OpenStreetMap）上的測速照相：補政府資料沒有的（主要是國道）。非官方，可能有漏或過時。"""
+    q = ('[out:json][timeout:180];area["ISO3166-1"="TW"][admin_level=2]->.a;'
+         '(node["highway"="speed_camera"](area.a);node["enforcement"="maxspeed"](area.a););out body;')
+    for ep in ('https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'):
+        try:
+            req = urllib.request.Request(ep, data=urllib.parse.urlencode({'data': q}).encode(), headers=UA)
+            with urllib.request.urlopen(req, timeout=200) as r:
+                j = json.loads(r.read().decode('utf-8'))
+            out = []
+            for e in j.get('elements', []):
+                t = e.get('tags', {})
+                lim = re.match(r'\d+', t.get('maxspeed', '') or '')
+                lim = int(lim.group()) if lim else 0
+                d = (t.get('direction') or t.get('camera:direction') or '').strip()
+                if d.upper() in OSM_DIR:
+                    d = 'deg:%d' % OSM_DIR[d.upper()]
+                elif re.fullmatch(r'\d{1,3}(\.\d+)?', d):
+                    d = 'deg:%d' % (round(float(d)) % 360)
+                else:
+                    d = ''
+                name = t.get('name') or t.get('ref') or ''
+                out.append([round(e['lon'], 5), round(e['lat'], 5), lim if 10 <= lim <= 130 else 0, d, name[:60], 'o'])
+            dbg.append(f'OSM {ep}: {len(out)} 筆')
+            return out
+        except Exception as ex:
+            dbg.append(f'OSM {ep} 失敗 {ex}')
+    return []
+
+def near(a, b, m=60):
+    dx = (a[0] - b[0]) * 101000; dy = (a[1] - b[1]) * 111000
+    return dx * dx + dy * dy < m * m
+
 def main():
     os.makedirs('data', exist_ok=True)
     cams, srcs = [], []
@@ -117,6 +152,32 @@ def main():
                 cams += got
                 srcs.append(ds)
                 break
+    for c in cams:
+        if len(c) < 6:
+            c.append('g')   # 政府資料
+    # 開放街圖補齊：離政府資料 60 公尺內的視為同一支，不重複
+    osm = osm_cams()
+    grid = {}
+    for c in cams:
+        grid.setdefault((round(c[0], 2), round(c[1], 2)), []).append(c)
+    added = 0
+    for o in osm:
+        k = (round(o[0], 2), round(o[1], 2))
+        cand = [c for dx in (-0.01, 0, 0.01) for dy in (-0.01, 0, 0.01) for c in grid.get((round(k[0] + dx, 2), round(k[1] + dy, 2)), [])]
+        if not any(near(o, c) for c in cand):
+            cams.append(o); added += 1
+    dbg.append(f'開放街圖補進 {added} 筆')
+    if added:
+        srcs.append('osm')
+    # 其他可能有國道測速的資料集：記下標題與下載網址，方便之後接
+    for ds in ('106636', '178143', '100856', '152480', '100855', '104431', '130111', '178119', '178120'):
+        m = get(f'https://data.gov.tw/api/v2/rest/dataset/{ds}', tries=1)
+        if m:
+            try:
+                r = json.loads(decode(m)).get('result', {})
+                dbg.append(f'候選 {ds}: {r.get("title")} | ' + ' ; '.join(f'{d.get("resourceFormat")} {d.get("resourceDownloadUrl")}' for d in r.get('distribution', [])))
+            except ValueError:
+                pass
     # 同一點去重（四捨五入到約 10 公尺）
     seen, uniq = set(), []
     for c in cams:
@@ -125,13 +186,13 @@ def main():
             seen.add(k)
             uniq.append(c)
     with open('data/speedcam-debug.txt', 'w', encoding='utf-8') as f:
-        f.write('\n'.join(dbg)[:20000])
+        f.write('\n'.join(dbg)[:40000])
     if len(uniq) < 200:
         print('資料太少，保留舊檔', len(uniq))
         sys.exit(0)
     with open('data/speedcam.json', 'w', encoding='utf-8') as f:
         json.dump({'updated': time.strftime('%Y-%m-%d'), 'src': srcs, 'n': len(uniq),
-                   'f': ['lon', 'lat', 'limit', 'dir', 'addr'], 'cams': uniq}, f, ensure_ascii=False, separators=(',', ':'))
+                   'f': ['lon', 'lat', 'limit', 'dir', 'addr', 'src(g=政府,o=開放街圖)'], 'cams': uniq}, f, ensure_ascii=False, separators=(',', ':'))
     print('ok', len(uniq), srcs)
 
 if __name__ == '__main__':
